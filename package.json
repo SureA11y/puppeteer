@@ -1,0 +1,23 @@
+{
+  "name": "a11y-core-puppeteer",
+  "version": "0.1.0",
+  "description": "Puppeteer binding for a11y-core -- scan real, live-rendered pages for accessibility issues.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "a11y-core": "file:../a11y-core"
+  },
+  "peerDependencies": {
+    "puppeteer": ">=22.0.0"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.3.0"
+  },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}
