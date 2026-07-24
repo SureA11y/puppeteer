@@ -1,18 +1,18 @@
 {
-  "name": "@a11y-core/puppeteer",
+  "name": "@a11y-labs/puppeteer",
   "version": "0.1.0",
-  "description": "Puppeteer binding for a11y-core -- scan real, live-rendered pages for accessibility issues.",
+  "description": "Puppeteer binding for a11y-labs -- scan real, live-rendered pages for accessibility issues.",
   "main": "src/index.js",
   "types": "src/index.d.ts",
   "author": "Jorge Rumoroso",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rumoroso/a11y-core-puppeteer.git"
+    "url": "git+https://github.com/rumoroso/a11y-labs-core-puppeteer.git"
   },
-  "homepage": "https://github.com/rumoroso/a11y-core-puppeteer#readme",
+  "homepage": "https://github.com/rumoroso/a11y-labs-core-puppeteer#readme",
   "bugs": {
-    "url": "https://github.com/rumoroso/a11y-core-puppeteer/issues"
+    "url": "https://github.com/rumoroso/a11y-labs-core-puppeteer/issues"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -26,8 +26,8 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@a11y-core/core": "^1.1.0",
-    "@a11y-core/binding-base": "^0.1.0"
+    "@a11y-labs/core": "^1.1.0",
+    "@a11y-labs/binding-base": "^0.1.0"
   },
   "peerDependencies": {
     "puppeteer": ">=22.0.0"

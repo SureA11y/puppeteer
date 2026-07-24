@@ -1,28 +1,28 @@
 'use strict';
 
-const { runa11yCoreInPage } = require('@a11y-core/core');
-const { A11yCoreBuilderBase } = require('@a11y-core/binding-base');
+const { runa11yCoreInPage } = require('@a11y-labs/core');
+const { A11yCoreBuilderBase } = require('@a11y-labs/binding-base');
 
 /**
- * Puppeteer binding for a11y-core -- scans a real, already-rendered page.
+ * Puppeteer binding for a11y-labs -- scans a real, already-rendered page.
  *
  * const results = await new A11yCoreBuilder({ page })
  *   .include('#main')
  *   .exclude('.cookie-banner')
  *   .withTags(['wcag2a', 'wcag2aa'])
- *   .disableRules(['a11ycore-meta-refresh-no-exceptions'])
+ *   .disableRules(['meta-refresh-no-exceptions'])
  *   .options({ contrast: { mode: 'auditorAssist' } })
  *   .analyze();
  *
- * `results` is a11y-core's own native result shape (checksResults /
- * rulesResults -- see a11y-core's docs/OUTPUT_SCHEMA.md), not the
+ * `results` is a11y-labs's own native result shape (checksResults /
+ * rulesResults -- see a11y-labs's docs/OUTPUT_SCHEMA.md), not the
  * violations/passes/incomplete/inapplicable shape used by other tools in
  * this space. Method names are modeled on common conventions in this space
  * for migration ease, but the richer native schema (severity, confidence,
  * occurrences, policy contract, WCAG SC mappings) is kept as-is rather than
  * reshaped to match.
  *
- * Extends `A11yCoreBuilderBase` (from `a11y-core-binding-base`), which owns
+ * Extends `A11yCoreBuilderBase` (from `a11y-labs-binding-base`), which owns
  * every method with no driver-specific work at all -- `include()`/
  * `exclude()`/`withTags()`/`disableTags()`/`withRules()`/`disableRules()`/
  * `options()`/`reportOnly()`/`elementRef()`/`frames()`/`withCustomRules()`'s
@@ -31,7 +31,7 @@ const { A11yCoreBuilderBase } = require('@a11y-core/binding-base');
  * boundary), and `_buildEngineArgs()`. This class adds exactly the parts
  * that are genuinely Puppeteer-specific: `analyze()`'s injection mechanics,
  * frame traversal, and `_attachElementRefs()`. See
- * `../a11y-core-binding-base/README.md` for what's shared and why.
+ * `../a11y-labs-binding-base/README.md` for what's shared and why.
  *
  * Opt in to scanning every frame on the page (including cross-origin
  * iframes) via .frames(true):
@@ -43,7 +43,7 @@ const { A11yCoreBuilderBase } = require('@a11y-core/binding-base');
  * Unlike script-injection-based accessibility engines (which need a
  * postMessage-based protocol, runPartial/finishRun, to reach cross-origin
  * iframes, since they're injected as a plain <script> and are fully subject
- * to the browser's same-origin policy), this doesn't need any a11y-core
+ * to the browser's same-origin policy), this doesn't need any a11y-labs
  * engine support: Puppeteer drives every frame
  * via CDP at the automation-process level, not as in-page script, so
  * cross-origin frame.evaluate() already just works -- verified empirically
@@ -52,8 +52,8 @@ const { A11yCoreBuilderBase } = require('@a11y-core/binding-base');
  * the single native result object it always has.
  *
  * By default `analyze()` returns every rule's outcome, including
- * `pass`/`notApplicable` -- a11y-core's own deliberate "not a
- * violations-only list" design (see a11y-core's docs/OUTPUT_SCHEMA.md).
+ * `pass`/`notApplicable` -- a11y-labs's own deliberate "not a
+ * violations-only list" design (see a11y-labs's docs/OUTPUT_SCHEMA.md).
  * Opt in to a lighter payload with `.reportOnly(['fail', 'cantTell'])`,
  * which post-filters `checksResults` by `outcome` (applied per-frame when
  * combined with `.frames(true)`, since `checksResults` lives at
@@ -73,12 +73,12 @@ const { A11yCoreBuilderBase } = require('@a11y-core/binding-base');
  * await firstFail.occurrences[0].elementHandle.screenshot({ path: 'flagged.png' });
  *
  * Register your own rule(s) for just this scan with
- * `.withCustomRules([...])` (a11y-core's `engineOptions.customRules`
- * escape hatch -- see a11y-core's docs/ENGINE_OPTIONS.md). Pass a real,
+ * `.withCustomRules([...])` (a11y-labs's `engineOptions.customRules`
+ * escape hatch -- see a11y-labs's docs/ENGINE_OPTIONS.md). Pass a real,
  * live `runInPage`/
  * `applicability` function -- unlike the raw `.options({ customRules })`
  * passthrough, this method converts them to the function-source string
- * a11y-core needs on this side of the page.evaluate() JSON boundary for
+ * a11y-labs needs on this side of the page.evaluate() JSON boundary for
  * you, so you don't have to remember to call .toString() yourself:
  *
  * const results = await new A11yCoreBuilder({ page })
@@ -118,22 +118,22 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
   }
 
   /**
-   * Runs the scan and returns a11y-core's native result object.
-   * @returns {Promise<object>} see a11y-core's docs/OUTPUT_SCHEMA.md
+   * Runs the scan and returns a11y-labs's native result object.
+   * @returns {Promise<object>} see a11y-labs's docs/OUTPUT_SCHEMA.md
    */
   async analyze() {
     const { contextSelector, engineOptions, runOnly } = this._buildEngineArgs();
 
     // Unlike Playwright's page.evaluate(fn, arg), which only accepts a
     // SINGLE argument (forcing a hand-built single-arg wrapper there --
-    // see a11y-core-playwright's own A11yCoreBuilder.js for the full
+    // see a11y-labs-playwright's own A11yCoreBuilder.js for the full
     // story), Puppeteer's page.evaluate()/frame.evaluate() is genuinely
     // variadic: evaluate<Params extends unknown[], Func>(pageFunction: Func
     // | string, ...args: Params) (confirmed against a real Puppeteer 25.x
     // install's own puppeteer-core/lib/types.d.ts, on the shared abstract
     // Realm class both Page and Frame implement). That means
     // runa11yCoreInPage's own 4 positional args can be passed straight
-    // through with no wrapper/eval() trick needed -- see a11y-core's own
+    // through with no wrapper/eval() trick needed -- see a11y-labs's own
     // docs/INTEGRATION.md for the documented example this mirrors.
     const runInFrame = async (frameOrPage) => {
       const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
