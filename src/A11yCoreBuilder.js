@@ -14,15 +14,15 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  *   .options({ contrast: { mode: 'auditorAssist' } })
  *   .analyze();
  *
- * `results` is surea11y's own native result shape (checksResults /
- * rulesResults -- see surea11y's docs/OUTPUT_SCHEMA.md), not the
+ * `results` is @surea11y/core's own native result shape (checksResults /
+ * rulesResults -- see ../core/docs/OUTPUT_SCHEMA.md), not the
  * violations/passes/incomplete/inapplicable shape used by other tools in
  * this space. Method names are modeled on common conventions in this space
  * for migration ease, but the richer native schema (severity, confidence,
  * occurrences, policy contract, WCAG SC mappings) is kept as-is rather than
  * reshaped to match.
  *
- * Extends `A11yCoreBuilderBase` (from `surea11y-binding-base`), which owns
+ * Extends `A11yCoreBuilderBase` (from `@surea11y/binding-base`), which owns
  * every method with no driver-specific work at all -- `include()`/
  * `exclude()`/`withTags()`/`disableTags()`/`withRules()`/`disableRules()`/
  * `options()`/`reportOnly()`/`elementRef()`/`frames()`/`withCustomRules()`'s
@@ -31,7 +31,7 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  * boundary), and `_buildEngineArgs()`. This class adds exactly the parts
  * that are genuinely Puppeteer-specific: `analyze()`'s injection mechanics,
  * frame traversal, and `_attachElementRefs()`. See
- * `../surea11y-binding-base/README.md` for what's shared and why.
+ * `../binding-base/README.md` for what's shared and why.
  *
  * Opt in to scanning every frame on the page (including cross-origin
  * iframes) via .frames(true):
@@ -43,7 +43,7 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  * Unlike script-injection-based accessibility engines (which need a
  * postMessage-based protocol, runPartial/finishRun, to reach cross-origin
  * iframes, since they're injected as a plain <script> and are fully subject
- * to the browser's same-origin policy), this doesn't need any surea11y
+ * to the browser's same-origin policy), this doesn't need any @surea11y/core
  * engine support: Puppeteer drives every frame
  * via CDP at the automation-process level, not as in-page script, so
  * cross-origin frame.evaluate() already just works -- verified empirically
@@ -52,8 +52,8 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  * the single native result object it always has.
  *
  * By default `analyze()` returns every rule's outcome, including
- * `pass`/`notApplicable` -- surea11y's own deliberate "not a
- * violations-only list" design (see surea11y's docs/OUTPUT_SCHEMA.md).
+ * `pass`/`notApplicable` -- @surea11y/core's own deliberate "not a
+ * violations-only list" design (see ../core/docs/OUTPUT_SCHEMA.md).
  * Opt in to a lighter payload with `.reportOnly(['fail', 'cantTell'])`,
  * which post-filters `checksResults` by `outcome` (applied per-frame when
  * combined with `.frames(true)`, since `checksResults` lives at
@@ -73,12 +73,12 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  * await firstFail.occurrences[0].elementHandle.screenshot({ path: 'flagged.png' });
  *
  * Register your own rule(s) for just this scan with
- * `.withCustomRules([...])` (surea11y's `engineOptions.customRules`
- * escape hatch -- see surea11y's docs/ENGINE_OPTIONS.md). Pass a real,
+ * `.withCustomRules([...])` (@surea11y/core's `engineOptions.customRules`
+ * escape hatch -- see ../core/docs/ENGINE_OPTIONS.md). Pass a real,
  * live `runInPage`/
  * `applicability` function -- unlike the raw `.options({ customRules })`
  * passthrough, this method converts them to the function-source string
- * surea11y needs on this side of the page.evaluate() JSON boundary for
+ * @surea11y/core needs on this side of the page.evaluate() JSON boundary for
  * you, so you don't have to remember to call .toString() yourself:
  *
  * const results = await new A11yCoreBuilder({ page })
@@ -118,23 +118,23 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
   }
 
   /**
-   * Runs the scan and returns surea11y's native result object.
-   * @returns {Promise<object>} see surea11y's docs/OUTPUT_SCHEMA.md
+   * Runs the scan and returns @surea11y/core's native result object.
+   * @returns {Promise<object>} see ../core/docs/OUTPUT_SCHEMA.md
    */
   async analyze() {
     const { contextSelector, engineOptions, runOnly } = this._buildEngineArgs();
 
     // Unlike Playwright's page.evaluate(fn, arg), which only accepts a
     // SINGLE argument (forcing a hand-built single-arg wrapper there --
-    // see surea11y-playwright's own A11yCoreBuilder.js for the full
+    // see @surea11y/playwright's own A11yCoreBuilder.js for the full
     // story), Puppeteer's page.evaluate()/frame.evaluate() is genuinely
     // variadic: evaluate<Params extends unknown[], Func>(pageFunction: Func
     // | string, ...args: Params) (confirmed against a real Puppeteer 25.x
     // install's own puppeteer-core/lib/types.d.ts, on the shared abstract
     // Realm class both Page and Frame implement). That means
     // runa11yCoreInPage's own 4 positional args can be passed straight
-    // through with no wrapper/eval() trick needed -- see surea11y's own
-    // docs/INTEGRATION.md for the documented example this mirrors.
+    // through with no wrapper/eval() trick needed -- see
+    // ../core/docs/INTEGRATION.md for the documented example this mirrors.
     const runInFrame = async (frameOrPage) => {
       const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
       const result = await frameOrPage.evaluate(runa11yCoreInPage, frameUrl, contextSelector, engineOptions, runOnly);

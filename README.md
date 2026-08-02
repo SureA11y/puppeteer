@@ -1,25 +1,14 @@
-# surea11y-puppeteer
+# @surea11y/puppeteer
 
-A Puppeteer binding for [`surea11y`](../surea11y) — scans a real, already-rendered page for accessibility issues using surea11y's DOM-rules engine.
+A Puppeteer binding for [`@surea11y/core`](https://github.com/rumoroso/surea11y-core) — scans a real, already-rendered page for accessibility issues using surea11y's DOM-rules engine.
 
-This is a **separate project/package** from `surea11y` itself and from its sibling [`surea11y-playwright`](../surea11y-playwright), kept as its own sibling directory rather than a monorepo subfolder — see `ROADMAP.md` §1 for the reasoning (same reasoning `surea11y-playwright` already used).
-
-## Install (local development)
-
-`surea11y` isn't published to npm yet, so this package depends on it via a relative `file:` path (see `package.json`):
-
-```json
-"dependencies": { "surea11y": "file:../core" }
-```
-
-That means this project must stay a sibling of `surea11y` (or you update the path) for `npm install` to resolve it.
+## Install
 
 ```bash
-npm install
-npm test
+npm install @surea11y/puppeteer puppeteer
 ```
 
-`puppeteer` (not `puppeteer-core`) is a `devDependency` here, which downloads its own bundled Chrome — unlike the Playwright binding, there's no separate `npx playwright install` step needed for `npm test` to work.
+Puppeteer downloads its own bundled Chrome as part of `npm install` — unlike the Playwright binding, there's no separate browser-install step needed for `npm test` to work.
 
 The cross-browser regression test in `tests/cross-browser.test.js` (proving this works against Firefox too, not just Chrome) additionally needs `npx puppeteer browsers install firefox`.
 
@@ -27,7 +16,7 @@ The cross-browser regression test in `tests/cross-browser.test.js` (proving this
 
 ```js
 const puppeteer = require('puppeteer');
-const { A11yCoreBuilder } = require('surea11y-puppeteer');
+const { A11yCoreBuilder } = require('@surea11y/puppeteer');
 
 const browser = await puppeteer.launch();
 const page = await browser.newPage();
@@ -45,11 +34,11 @@ console.log(results.checksResults.filter(r => r.outcome === 'fail'));
 await browser.close();
 ```
 
-`results` is surea11y's own native result shape — see [`../surea11y/docs/OUTPUT_SCHEMA.md`](../surea11y/docs/OUTPUT_SCHEMA.md) — not the `violations`/`passes`/`incomplete`/`inapplicable` shape used by other popular accessibility testing tools. The builder's *method names* are modeled on common conventions in this space for migration familiarity; the richer result schema is kept as-is.
+`results` is `@surea11y/core`'s own native result shape — see its [`OUTPUT_SCHEMA.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/OUTPUT_SCHEMA.md) — not the `violations`/`passes`/`incomplete`/`inapplicable` shape used by other popular accessibility testing tools. The builder's *method names* are modeled on common conventions in this space for migration familiarity; the richer result schema is kept as-is.
 
 Also see `examples/basic-scan.js` for a runnable script (`npm run example -- <url>`).
 
-`withTags()`/`disableRules()` above have counterparts: `.withRules([...])` (only run these specific rule IDs) and `.disableTags([...])` (never run rules carrying any of these tags). All four compose the same way similar allow/deny-list options do in other accessibility testing tools, with one non-obvious rule worth knowing: a "disable" always wins over a "with" on the same ID/tag (e.g. `.withRules(['a']).disableRules(['a'])` drops `'a'` entirely), and combining `.withRules()` **and** `.withTags()` together requires a rule to satisfy *both* (surea11y's default `includeMode: 'and'` — see `../surea11y/docs/ENGINE_OPTIONS.md`), not either one.
+`withTags()`/`disableRules()` above have counterparts: `.withRules([...])` (only run these specific rule IDs) and `.disableTags([...])` (never run rules carrying any of these tags). All four compose the same way similar allow/deny-list options do in other accessibility testing tools, with one non-obvious rule worth knowing: a "disable" always wins over a "with" on the same ID/tag (e.g. `.withRules(['a']).disableRules(['a'])` drops `'a'` entirely), and combining `.withRules()` **and** `.withTags()` together requires a rule to satisfy *both* (`@surea11y/core`'s default `includeMode: 'and'` — see [`ENGINE_OPTIONS.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/ENGINE_OPTIONS.md)), not either one.
 
 `.exclude(selector)` above excludes globally. Pass a second argument to scope it to specific rule IDs instead: `.exclude('.mat-select', { rules: ['aria-required-children'] })` skips `.mat-select` for that rule only — every other rule still sees it. Global and rule-scoped `.exclude()` calls compose freely.
 
@@ -63,7 +52,7 @@ The pattern above works unchanged inside a real test:
 
 ```js
 const puppeteer = require('puppeteer');
-const { A11yCoreBuilder, formatFailures } = require('surea11y-puppeteer');
+const { A11yCoreBuilder, formatFailures } = require('@surea11y/puppeteer');
 
 const browser = await puppeteer.launch();
 const page = await browser.newPage();
@@ -74,7 +63,7 @@ const results = await new A11yCoreBuilder({ page }).reportOnly(['fail']).analyze
 assert.strictEqual(results.checksResults.length, 0, formatFailures(results.checksResults));
 ```
 
-See `examples/e2e-test-example.test.js` for a fuller, runnable version (`npm run example:e2e`) — one test proving real violations get caught (unlabeled button, missing `alt`), one proving a well-formed page passes cleanly. It uses `node:test` directly rather than a dedicated test-runner package: Puppeteer has no first-party test runner the way `@playwright/test` is the default for Playwright, and `node:test` is a zero-new-dependency choice that already matches this project's own test suite (see `ROADMAP.md` §6 for the full reasoning, including the other runners considered).
+See `examples/e2e-test-example.test.js` for a fuller, runnable version (`npm run example:e2e`) — one test proving real violations get caught (unlabeled button, missing `alt`), one proving a well-formed page passes cleanly. It uses `node:test` directly rather than a dedicated test-runner package: Puppeteer has no first-party test runner the way `@playwright/test` is the default for Playwright, and `node:test` is a zero-new-dependency choice that already matches this project's own test suite.
 
 ### Readable console/CI output on failure
 
@@ -89,7 +78,7 @@ Error: 1) button-name-present (serious): This button has no accessible name.
    Add an alt attribute (use alt="" only for decorative images).
 ```
 
-Deliberately a plain function, not a custom `expect` matcher — no dependency on any particular assertion library, so it works the same with `node:assert`, Jest, Vitest, or a hand-rolled `if`/`throw`. Defaults to `fail`/`cantTell` outcomes (the only two that ever carry occurrences); pass `{ outcomes: [...] }` to narrow further. A thrown rule (`occurrences: []`, `error` set — see `../surea11y/docs/OUTPUT_SCHEMA.md`) is still surfaced using its `error` message rather than silently dropped.
+Deliberately a plain function, not a custom `expect` matcher — no dependency on any particular assertion library, so it works the same with `node:assert`, Jest, Vitest, or a hand-rolled `if`/`throw`. Defaults to `fail`/`cantTell` outcomes (the only two that ever carry occurrences); pass `{ outcomes: [...] }` to narrow further. A thrown rule (`occurrences: []`, `error` set — see [`OUTPUT_SCHEMA.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/OUTPUT_SCHEMA.md)) is still surfaced using its `error` message rather than silently dropped.
 
 ### Scanning every frame, including cross-origin iframes
 
@@ -102,11 +91,11 @@ for (const frame of results.frames) {
 }
 ```
 
-Unlike script-injection-based accessibility tools (which need a `postMessage`-based protocol to reach cross-origin iframes, since they're injected as a plain `<script>` fully subject to the browser's same-origin policy), this needs no `surea11y` engine support at all — Puppeteer drives every frame via CDP at the automation-process level, so cross-origin `frame.evaluate()` already just works. Verified against a real cross-origin page (`example.org` embedded in an unrelated origin) — see `ROADMAP.md` §2c and `tests/builder.test.js`. Default off, so plain `.analyze()` is unaffected unless you opt in.
+Unlike script-injection-based accessibility tools (which need a `postMessage`-based protocol to reach cross-origin iframes, since they're injected as a plain `<script>` fully subject to the browser's same-origin policy), this needs no extra `@surea11y/core` engine support at all — Puppeteer drives every frame via CDP at the automation-process level, so cross-origin `frame.evaluate()` already just works. Verified against a real cross-origin page (`example.org` embedded in an unrelated origin) — see `tests/builder.test.js`. Default off, so plain `.analyze()` is unaffected unless you opt in.
 
 ### Trimming the result to just violations
 
-By default `analyze()` returns every rule's outcome, including `pass`/`notApplicable` — surea11y's own deliberate "not a violations-only list" design (see `../surea11y/docs/OUTPUT_SCHEMA.md`). Use `.reportOnly()` to post-filter down to only the outcomes you care about:
+By default `analyze()` returns every rule's outcome, including `pass`/`notApplicable` — `@surea11y/core`'s own deliberate "not a violations-only list" design (see [`OUTPUT_SCHEMA.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/OUTPUT_SCHEMA.md)). Use `.reportOnly()` to post-filter down to only the outcomes you care about:
 
 ```js
 const results = await new A11yCoreBuilder({ page })
@@ -116,7 +105,7 @@ const results = await new A11yCoreBuilder({ page })
 console.log(results.checksResults); // only fail/cantTell entries, pass/notApplicable dropped
 ```
 
-Valid outcome values are `'pass'`, `'fail'`, `'cantTell'`, `'notApplicable'`. This is pure binding-layer filtering — surea11y itself still computes every rule; nothing about the scan itself changes. Combines with `.frames(true)`: the filter is applied to `results.topFrame` and each entry of `results.frames` independently.
+Valid outcome values are `'pass'`, `'fail'`, `'cantTell'`, `'notApplicable'`. This is pure binding-layer filtering — the engine itself still computes every rule; nothing about the scan itself changes. Combines with `.frames(true)`: the filter is applied to `results.topFrame` and each entry of `results.frames` independently.
 
 ### Getting a live element handle, not just a selector string
 
@@ -136,7 +125,7 @@ Each `ElementHandle` holds a browser-side reference until garbage collected or e
 
 ### Registering a custom rule at runtime
 
-`surea11y` supports registering additional rules per-scan via `engineOptions.customRules`. Use `.withCustomRules()` to register one:
+`@surea11y/core` supports registering additional rules per-scan via `engineOptions.customRules`. Use `.withCustomRules()` to register one:
 
 ```js
 const results = await new A11yCoreBuilder({ page })
@@ -153,7 +142,7 @@ const results = await new A11yCoreBuilder({ page })
   .analyze();
 ```
 
-A custom rule descriptor is the same shape as one of surea11y's own internal rule modules (`{ id, meta, runInPage, applicability?, data? }`) — see `../surea11y/docs/ENGINE_OPTIONS.md` for the full contract. Results appear in `checksResults` exactly like a built-in rule's, including automatic `selector`/`html`/`structuralPath` fill-in. Registered per-scan only (nothing persists between calls or shows up in any catalog listing), and a custom rule whose `id` collides with a built-in one overrides it for that scan.
+A custom rule descriptor is the same shape as one of `@surea11y/core`'s own internal rule modules (`{ id, meta, runInPage, applicability?, data? }`) — see its [`ENGINE_OPTIONS.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/ENGINE_OPTIONS.md) for the full contract. Results appear in `checksResults` exactly like a built-in rule's, including automatic `selector`/`html`/`structuralPath` fill-in. Registered per-scan only (nothing persists between calls or shows up in any catalog listing), and a custom rule whose `id` collides with a built-in one overrides it for that scan.
 
 Pass an array to register several at once, or call `.withCustomRules()` again to add more — like `.withRules()`/`.withTags()`, it accumulates rather than replacing what was already registered:
 
@@ -164,24 +153,30 @@ const results = await new A11yCoreBuilder({ page })
   .analyze();
 ```
 
-**Why `.withCustomRules()` instead of the raw `.options({ customRules })` passthrough** (still supported, and composes with this method if you use both): `runInPage`/`applicability` must reach the page as a function-source *string*, not a live `Function` — a Puppeteer `page.evaluate()` argument crosses a serialization boundary that can't carry a live function reference, only a string surea11y can reconstruct with `new Function` on the page side. Passing a raw live function via `.options()` directly would silently fail to serialize; `.withCustomRules()` calls `.toString()` on a live function for you, so you can write a normal function and not have to remember that constraint yourself. A string is still accepted as-is if you already have one.
+**Why `.withCustomRules()` instead of the raw `.options({ customRules })` passthrough** (still supported, and composes with this method if you use both): `runInPage`/`applicability` must reach the page as a function-source *string*, not a live `Function` — a Puppeteer `page.evaluate()` argument crosses a serialization boundary that can't carry a live function reference, only a string `@surea11y/core` can reconstruct with `new Function` on the page side. Passing a raw live function via `.options()` directly would silently fail to serialize; `.withCustomRules()` calls `.toString()` on a live function for you, so you can write a normal function and not have to remember that constraint yourself. A string is still accepted as-is if you already have one.
 
-Invalid input (a missing/empty `id`, or a `runInPage`/`applicability` that's neither a function nor a non-empty string) throws immediately from `.withCustomRules()` itself, rather than surfacing later as a silently-skipped rule deep inside the page — easier to catch during development. (Note: a *raw* `.options({ customRules })` call bypasses this check entirely and defers to surea11y's own engine-side behavior, which silently skips an invalid descriptor rather than throwing — see `../surea11y/docs/ENGINE_OPTIONS.md`.)
+Invalid input (a missing/empty `id`, or a `runInPage`/`applicability` that's neither a function nor a non-empty string) throws immediately from `.withCustomRules()` itself, rather than surfacing later as a silently-skipped rule deep inside the page — easier to catch during development. (Note: a *raw* `.options({ customRules })` call bypasses this check entirely and defers to `@surea11y/core`'s own engine-side behavior, which silently skips an invalid descriptor rather than throwing.)
 
 ### Element addressing beyond a CSS selector
 
-Every occurrence already carries `selector` and (with `.elementRef(true)`, above) a live `ElementHandle`. It also carries `structuralPath` — a sibling-index path from the document root down to the flagged element (e.g. `[1, 0, 2]`) — a more robust identity than a selector string alone, since it survives some DOM changes a selector wouldn't (an id/class rename, for instance). No opt-in needed; it's already on every `fail`/`cantTell` occurrence today. See `../surea11y/docs/OUTPUT_SCHEMA.md` for the full field description.
+Every occurrence already carries `selector` and (with `.elementRef(true)`, above) a live `ElementHandle`. It also carries `structuralPath` — a sibling-index path from the document root down to the flagged element (e.g. `[1, 0, 2]`) — a more robust identity than a selector string alone, since it survives some DOM changes a selector wouldn't (an id/class rename, for instance). No opt-in needed; it's already on every `fail`/`cantTell` occurrence today. See [`OUTPUT_SCHEMA.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/OUTPUT_SCHEMA.md) for the full field description.
 
 ## TypeScript
 
-`src/A11yCoreBuilder.d.ts` (re-exported from `src/index.d.ts`, wired up via `package.json`'s `types` field) ships hand-written types for the whole builder API plus surea11y's native result shapes (`A11yCoreResult`, `CheckResult`, `Occurrence`, `CompositeResult`, etc.), mirrored from `../surea11y/docs/OUTPUT_SCHEMA.md`. `analyze()` is typed `Promise<A11yCoreResult | A11yCoreMultiFrameResult>` — narrow on `'topFrame' in results` (or cast, if you already know which mode you called) to get the specific shape back, since a fluent builder can't statically track that `.frames(true)` was called earlier in the chain. `puppeteer` is a `peerDependencies` entry (not just `devDependencies`) since the class's `page` argument and `Occurrence#elementHandle` both come from it — consumers need their own `puppeteer` install for the types to resolve, same as they already do to construct a `Page` in the first place.
+`src/A11yCoreBuilder.d.ts` (re-exported from `src/index.d.ts`, wired up via `package.json`'s `types` field) ships hand-written types for the whole builder API plus `@surea11y/core`'s native result shapes (`A11yCoreResult`, `CheckResult`, `Occurrence`, `CompositeResult`, etc.), mirrored from [`OUTPUT_SCHEMA.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/OUTPUT_SCHEMA.md). `analyze()` is typed `Promise<A11yCoreResult | A11yCoreMultiFrameResult>` — narrow on `'topFrame' in results` (or cast, if you already know which mode you called) to get the specific shape back, since a fluent builder can't statically track that `.frames(true)` was called earlier in the chain. `puppeteer` is a `peerDependencies` entry (not just `devDependencies`) since the class's `page` argument and `Occurrence#elementHandle` both come from it — consumers need their own `puppeteer` install for the types to resolve, same as they already do to construct a `Page` in the first place.
 
-## Relationship to `surea11y-playwright`
+## Relationship to `@surea11y/playwright`
 
-This binding's builder API is deliberately identical to [`surea11y-playwright`](../surea11y-playwright)'s — same method names, same mutability contract, same result shapes — so switching between the two (or running the same accessibility gate logic against both) is a drop-in swap of `puppeteer.launch()`/`playwright.chromium.launch()` and nothing else. As of `ROADMAP.md` §8, that's no longer just parallel implementation: `A11yCoreBuilder` here extends `A11yCoreBuilderBase` from [`../surea11y-binding-base`](../surea11y-binding-base), a small shared package every surea11y binding now depends on for the logic that genuinely has nothing to do with any particular driver. The one real implementation difference left is internal: `analyze()`'s injection call is simpler here, since Puppeteer's `page.evaluate()` is genuinely variadic and doesn't need the wrapper/`eval()` trick Playwright's single-argument `evaluate()` requires — see `ROADMAP.md` §2b.
+This binding's builder API is deliberately identical to `@surea11y/playwright`'s — same method names, same mutability contract, same result shapes — so switching between the two (or running the same accessibility gate logic against both) is a drop-in swap of `puppeteer.launch()`/`playwright.chromium.launch()` and nothing else. The one real implementation difference is internal: `analyze()`'s injection call is simpler here, since Puppeteer's `page.evaluate()` is genuinely variadic and doesn't need the wrapper/`eval()` trick Playwright's single-argument `evaluate()` requires.
 
-Also see [`../surea11y/docs/BINDING_AUTHORS_GUIDE.md`](../surea11y/docs/BINDING_AUTHORS_GUIDE.md) — `surea11y`'s own reference for building a binding like this one, distinguishing what's already engine-level (a generic `.options()`/`runOnly` passthrough, e.g. WCAG-version tag filtering, `structuralPath`) from what every binding has to build itself (element refs, `reportOnly`-style verbosity filtering, the `page.evaluate()`/`frame.evaluate()` serialization-boundary caveat `.withCustomRules()` exists to paper over). It cites this project's `.elementRef()`, `.reportOnly()`, `.frames(true)`, and `.withCustomRules()` by name as worked examples alongside `surea11y-playwright`'s.
+## Building another framework binding?
 
-## Status and what's next
+See `@surea11y/core`'s [`BINDING_AUTHORS_GUIDE.md`](https://github.com/rumoroso/surea11y-core/blob/main/docs/BINDING_AUTHORS_GUIDE.md) — a reference for building a new binding, covering which parity features are engine-level (work through a generic `.options()`/`runOnly` passthrough with zero binding code, including WCAG-version tag filtering) vs. binding-layer (element refs, `reportOnly`-style verbosity filtering, the `page.evaluate()`/`frame.evaluate()` serialization-boundary caveat that `.withCustomRules()` exists to paper over). It cites this project's `.elementRef()`, `.reportOnly()`, `.frames(true)`, and `.withCustomRules()` by name as worked examples alongside `@surea11y/playwright`'s.
 
-See `ROADMAP.md` — it documents what's built, what's verified, and what's still open.
+`A11yCoreBuilder` here extends `A11yCoreBuilderBase` from [`@surea11y/binding-base`](https://github.com/rumoroso/surea11y-core-binding-base), a small shared package holding the scaffolding common to every framework binding. A new binding should depend on that package from the start.
+
+## License
+
+MIT — see [`LICENSE`](./LICENSE).
+
+This package depends on [`@surea11y/core`](https://github.com/rumoroso/surea11y-core), which is MPL-2.0. MPL-2.0's copyleft is file-level and applies only to `@surea11y/core`'s own source files; consuming it as a normal package dependency doesn't affect this package's license.
