@@ -5,7 +5,7 @@
  * A11yCoreBuilder as an accessibility gate inside a real test, not just a
  * standalone script -- see basic-scan.js for that simpler case.
  *
- * Runner choice (see ../ROADMAP.md §6): plain `node:test` + `puppeteer`,
+ * Runner choice: plain `node:test` + `puppeteer`,
  * not `jest-puppeteer` or Vitest. Puppeteer has no first-party test runner
  * the way `@playwright/test` is the obvious default for Playwright, and
  * `node:test` is a zero-new-dependency choice that already matches this

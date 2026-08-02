@@ -811,7 +811,7 @@ test('A11yCoreBuilder: elementRef(true) resolves against each frame\'s own docum
   }
 });
 
-test('A11yCoreBuilder: frames(true) scans a genuinely cross-origin iframe (no surea11y engine support needed for this -- see ../ROADMAP.md §2c)', async () => {
+test('A11yCoreBuilder: frames(true) scans a genuinely cross-origin iframe (no surea11y engine support needed for this)', async () => {
   const browser = await puppeteer.launch();
   try {
     const page = await browser.newPage();

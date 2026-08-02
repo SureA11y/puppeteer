@@ -47,8 +47,8 @@ const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
  * engine support: Puppeteer drives every frame
  * via CDP at the automation-process level, not as in-page script, so
  * cross-origin frame.evaluate() already just works -- verified empirically
- * against a real cross-origin iframe, see ../ROADMAP.md and
- * tests/builder.test.js. Default off, so plain .analyze() keeps returning
+ * against a real cross-origin iframe, see tests/builder.test.js. Default
+ * off, so plain .analyze() keeps returning
  * the single native result object it always has.
  *
  * By default `analyze()` returns every rule's outcome, including
