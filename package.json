@@ -36,7 +36,7 @@
     "puppeteer": "^25.3.0"
   },
   "scripts": {
-    "test": "node --test \"tests/**/*.test.js\"",
+    "test": "node --test tests/*.test.js",
     "example": "node examples/basic-scan.js",
     "example:e2e": "node --test examples/e2e-test-example.test.js"
   }
