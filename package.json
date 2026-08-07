@@ -8,11 +8,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rumoroso/surea11y-core-puppeteer.git"
+    "url": "git+https://github.com/SureA11y/puppeteer.git"
   },
-  "homepage": "https://github.com/rumoroso/surea11y-core-puppeteer#readme",
+  "homepage": "https://github.com/SureA11y/puppeteer#readme",
   "bugs": {
-    "url": "https://github.com/rumoroso/surea11y-core-puppeteer/issues"
+    "url": "https://github.com/SureA11y/puppeteer/issues"
   },
   "engines": {
     "node": ">=22.12.0"
