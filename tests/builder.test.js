@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const puppeteer = require('puppeteer');
-const { A11yCoreBuilder } = require('../src/index.js');
+const { A11yCoreBuilder, EngineError, getScanGaps, formatFailures } = require('../src/index.js');
 
 // Shared across the customRules tests below -- reported outcome depends on
 // whether ctx.document has a .my-widget element. runInPage must be a
@@ -834,4 +834,195 @@ test('A11yCoreBuilder: frames(true) scans a genuinely cross-origin iframe (no su
   } finally {
     await browser.close();
   }
+});
+
+test('A11yCoreBuilder: analyze() rejects with an EngineError carrying code INVALID_RUN_ONLY when withRules() names no known rule', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><button></button></body></html>');
+
+    // page.evaluate() keeps only an error's message; the binding brings the
+    // engine's `code` back, so a typo in a rule id can be told apart from a
+    // broken page.
+    await assert.rejects(
+      new A11yCoreBuilder({ page }).withRules(['no-such-rule']).analyze(),
+      (e) => e instanceof EngineError && e.name === 'EngineError' && e.code === 'INVALID_RUN_ONLY' && e.selector === null
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: analyze() rejects with an EngineError carrying code INVALID_CONTEXT_SELECTOR and the selector for an include() the browser cannot parse', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><button></button></body></html>');
+
+    await assert.rejects(
+      new A11yCoreBuilder({ page }).include('#main[').analyze(),
+      (e) => e instanceof EngineError && e.code === 'INVALID_CONTEXT_SELECTOR' && e.selector === '#main['
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: an include() that matches nothing scans nothing, and the result says so', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><img src="x.png"></body></html>');
+
+    const results = await new A11yCoreBuilder({ page }).include('#missing').reportOnly(['fail']).analyze();
+
+    assert.deepStrictEqual(results.checksResults, []);
+    assert.deepStrictEqual(results.contextMatch, { elementCount: 0, unmatchedSelectors: ['#missing'] });
+    const gaps = getScanGaps(results);
+    assert.deepStrictEqual(gaps.map((g) => g.kind), ['context-not-found']);
+    // So an assertion built on formatFailures(results) does not read as clean.
+    assert.match(formatFailures(results), /Nothing was scanned: the scan scope matched no element \("#missing"\)/);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: a custom rule the engine could not run is listed in skippedCustomRules, not passed over', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><div class="my-widget"></div></body></html>');
+
+    // The raw options() passthrough skips withCustomRules()'s checks, so the
+    // engine gets a runInPage it cannot turn back into a function.
+    const results = await new A11yCoreBuilder({ page })
+      .options({ customRules: [{ id: 'broken-custom-rule', meta: { title: 'Broken' }, runInPage: 'not a function' }] })
+      .analyze();
+
+    assert.ok(!results.checksResults.some((r) => r.ruleId === 'broken-custom-rule'));
+    assert.deepStrictEqual(results.skippedCustomRules.map((r) => r.id), ['broken-custom-rule']);
+    const [gap] = getScanGaps(results);
+    assert.strictEqual(gap.kind, 'custom-rule-skipped');
+    assert.strictEqual(gap.rule.id, 'broken-custom-rule');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: the result names the @surea11y/core release that produced it', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><button></button></body></html>');
+
+    const results = await new A11yCoreBuilder({ page }).analyze();
+    assert.strictEqual(results.engine.version, require('@surea11y/core/package.json').version);
+    assert.match(formatFailures(results), new RegExp(`Scanned with @surea11y/core ${results.engine.version.replace(/\./g, '\\.')}\\.`));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: frames(true) with include() scopes the top frame only, and scans each sub-frame whole', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      'data:text/html,<html><body>' +
+      '<main id="main"><img src="top.png"></main>' +
+      '<img src="outside.png">' +
+      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg id=inner src=x.png%3E%3C/body%3E%3C/html%3E"></iframe>' +
+      '</body></html>'
+    );
+    await page.waitForNetworkIdle().catch(() => {});
+
+    const results = await new A11yCoreBuilder({ page }).include('#main').frames(true).analyze();
+
+    const top = results.topFrame.checksResults.find((r) => r.ruleId === 'img-alt-present');
+    assert.deepStrictEqual(top.occurrences.map((o) => o.selector), ['#main > img']);
+
+    // The sub-frame has no #main; it is scanned whole instead of not at all.
+    assert.strictEqual(results.frames.length, 1);
+    assert.strictEqual(results.frames[0].contextSelector, null);
+    assert.strictEqual(results.frames[0].contextMatch, null);
+    const inner = results.frames[0].checksResults.find((r) => r.ruleId === 'img-alt-present');
+    assert.strictEqual(inner.outcome, 'fail');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: frames(true) rejects with the EngineError instead of reporting it per frame', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      'data:text/html,<html><body>' +
+      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg src=x.png%3E%3C/body%3E%3C/html%3E"></iframe>' +
+      '</body></html>'
+    );
+    await page.waitForNetworkIdle().catch(() => {});
+
+    // The top frame is scanned first, so a bad rule list fails the whole
+    // scan there rather than turning into one error entry per frame.
+    await assert.rejects(
+      new A11yCoreBuilder({ page }).frames(true).withRules(['no-such-rule']).analyze(),
+      (e) => e instanceof EngineError && e.code === 'INVALID_RUN_ONLY'
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: elementRef(true) resolves an occurrence inside a shadow tree to that element, through its shadow host', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><img id="light" src="a.png" alt="Logo"><my-card></my-card></body></html>');
+    await page.evaluate(() => {
+      const host = document.querySelector('my-card');
+      host.attachShadow({ mode: 'open' }).innerHTML = '<img id="shadowed" src="b.png">';
+    });
+
+    const results = await new A11yCoreBuilder({ page }).withRules(['img-alt-present']).elementRef(true).analyze();
+
+    const rule = results.checksResults.find((r) => r.ruleId === 'img-alt-present');
+    assert.strictEqual(rule.outcome, 'fail');
+    const [occurrence] = rule.occurrences;
+    assert.deepStrictEqual(occurrence.shadowHostSelectors, ['html > body > my-card']);
+    // Its selector alone, looked up in the document, would find the light
+    // DOM's image or none: the handle must be the shadowed one.
+    const id = await occurrence.elementHandle.evaluate((el) => el.id);
+    assert.strictEqual(id, 'shadowed');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: elementRef(true) leaves elementHandle null when the flagged element is gone', async () => {
+  const page = {
+    evaluate: async () => ({
+      checksResults: [{ ruleId: 'img-alt-present', outcome: 'fail', occurrences: [{ selector: '#gone' }] }]
+    }),
+    evaluateHandle: async () => {
+      const handle = { disposed: false, asElement: () => null, dispose: async () => { handle.disposed = true; } };
+      page.lastHandle = handle;
+      return handle;
+    }
+  };
+
+  const results = await new A11yCoreBuilder({ page }).elementRef(true).analyze();
+
+  assert.strictEqual(results.checksResults[0].occurrences[0].elementHandle, null);
+  // The handle to null is released rather than left in the page.
+  assert.strictEqual(page.lastHandle.disposed, true);
+});
+
+test('index exports the binding-base helpers a test needs beside formatFailures', () => {
+  const index = require('../src/index.js');
+  const base = require('@surea11y/binding-base');
+  assert.strictEqual(index.getScanGaps, base.getScanGaps);
+  assert.strictEqual(index.formatOccurrenceLocation, base.formatOccurrenceLocation);
+  assert.strictEqual(index.EngineError, base.EngineError);
 });
