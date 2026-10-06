@@ -227,7 +227,8 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
 // per scanned frame; the gaps also stay readable through getScanGaps().
 function warnScanGaps(result) {
   for (const gap of getScanGaps(result)) {
-    console.warn(`@surea11y/puppeteer: ${gap.message}` + (result.url ? ` (${result.url})` : ''));
+    const where = result.url ? ` (${result.url})` : '';
+    console.warn(`@surea11y/puppeteer${where}: ${gap.message}`);
   }
 }
 
