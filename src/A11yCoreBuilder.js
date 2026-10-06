@@ -1,7 +1,17 @@
 'use strict';
 
 const { runa11yCoreInPage } = require('@surea11y/core');
-const { A11yCoreBuilderBase } = require('@surea11y/binding-base');
+const {
+  A11yCoreBuilderBase,
+  createInPageScan,
+  rethrowEngineError,
+  queryOccurrenceElement
+} = require('@surea11y/binding-base');
+
+// core's scan, wrapped so an engine error keeps its `code` across
+// page.evaluate(), which keeps only an error's message. Built once; it is
+// self-contained, so Puppeteer serializes it as it did runa11yCoreInPage.
+const inPageScan = createInPageScan(runa11yCoreInPage);
 
 /**
  * Puppeteer binding for surea11y -- scans a real, already-rendered page.
@@ -131,22 +141,28 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // variadic: evaluate<Params extends unknown[], Func>(pageFunction: Func
     // | string, ...args: Params) (confirmed against a real Puppeteer 25.x
     // install's own puppeteer-core/lib/types.d.ts, on the shared abstract
-    // Realm class both Page and Frame implement). That means
-    // runa11yCoreInPage's own 4 positional args can be passed straight
-    // through with no wrapper/eval() trick needed -- see
-    // ../core/docs/INTEGRATION.md for the documented example this mirrors.
-    const runInFrame = async (frameOrPage) => {
+    // Realm class both Page and Frame implement). That means the scan's
+    // own 4 positional args can be passed straight through with no
+    // wrapper/eval() trick needed -- see ../core/docs/INTEGRATION.md for
+    // the documented example this mirrors.
+    //
+    // An engine error (INVALID_RUN_ONLY, INVALID_CONTEXT_SELECTOR) comes
+    // back as a plain object and is thrown here as an EngineError with its
+    // `code`; any other error in the page rejects evaluate() as before.
+    const runInFrame = async (frameOrPage, frameContextSelector) => {
       const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
-      const result = await frameOrPage.evaluate(runa11yCoreInPage, frameUrl, contextSelector, engineOptions, runOnly);
+      const result = rethrowEngineError(
+        await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, engineOptions, runOnly)
+      );
       return this._elementRef ? this._attachElementRefs(frameOrPage, result) : result;
     };
 
     if (!this._scanFrames) {
-      return this._applyReportOnly(await runInFrame(this._page));
+      return this._applyReportOnly(await runInFrame(this._page, contextSelector));
     }
 
     const mainFrame = this._page.mainFrame();
-    const topFrame = this._applyReportOnly(await runInFrame(mainFrame));
+    const topFrame = this._applyReportOnly(await runInFrame(mainFrame, contextSelector));
 
     // page.frames() includes the main frame itself -- exclude it here since
     // it's already covered by topFrame above, so callers don't have to
@@ -155,7 +171,12 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     const frames = [];
     for (const frame of subFrames) {
       try {
-        frames.push(this._applyReportOnly(await runInFrame(frame)));
+        // include() scopes the top frame only: each sub-frame is scanned
+        // whole, as core's own runa11yCoreAcrossFrames does. The selectors
+        // were written against the top document, and since core 1.10.0 a
+        // selector that matches nothing scans nothing, so passing them on
+        // would leave most frames unscanned.
+        frames.push(this._applyReportOnly(await runInFrame(frame, null)));
       } catch (e) {
         // A frame can detach/navigate away mid-scan, or be a sandboxed
         // frame the browser blocks scripting in -- don't let one bad frame
@@ -171,9 +192,12 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
   }
 
   /**
-   * Resolves occurrence.selector to a live ElementHandle for every
-   * fail/cantTell occurrence, scoped to frameOrPage's own document (a
-   * Puppeteer Page and Frame both expose the same .$(selector) shape).
+   * Resolves each fail/cantTell occurrence to a live ElementHandle, scoped
+   * to frameOrPage's own document (a Puppeteer Page and Frame both expose
+   * evaluateHandle()). An occurrence inside a shadow tree is found through
+   * its `shadowHostSelectors` (core 1.10.0 and later): its `selector` holds
+   * only inside the last host's shadow root, so `frameOrPage.$(selector)`
+   * would find another element, or none.
    * Mutates and returns the same result object -- it's a fresh object from
    * this scan, not shared external state.
    */
@@ -185,13 +209,27 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
         // Most occurrences carry a concrete element selector, but a page-wide
         // finding with no single target element (e.g. some `manual`/cantTell
         // rules) can carry "" -- not every occurrence resolves to one element,
-        // so leave elementHandle null rather than passing "" to .$() (which
-        // throws, it's not a valid CSS selector).
-        occurrence.elementHandle = occurrence.selector ? await frameOrPage.$(occurrence.selector) : null;
+        // so leave elementHandle null without a round trip to the page.
+        occurrence.elementHandle = occurrence.selector
+          ? await resolveElementHandle(frameOrPage, occurrence)
+          : null;
       }
     }
     return result;
   }
+}
+
+// The occurrence's element as an ElementHandle, or null when it is gone (or
+// a shadow host on the way is). A handle to null is disposed, not leaked.
+async function resolveElementHandle(frameOrPage, occurrence) {
+  const handle = await frameOrPage.evaluateHandle(
+    queryOccurrenceElement,
+    occurrence.selector,
+    occurrence.shadowHostSelectors || null
+  );
+  const element = handle.asElement();
+  if (!element) await handle.dispose();
+  return element;
 }
 
 module.exports = { A11yCoreBuilder };
