@@ -1050,7 +1050,9 @@ test('A11yCoreBuilder: analyze() warns on the console about each scan gap, once 
     // Sub-frame: scanned whole, so only the skipped custom rule.
     assert.strictEqual(warnings.filter((w) => /Nothing was scanned: the scan scope matched no element \("#missing"\)/.test(w)).length, 1);
     assert.strictEqual(warnings.filter((w) => /Custom rule "broken-custom-rule" did not run/.test(w)).length, 2);
-    assert.ok(warnings.every((w) => w.startsWith('@surea11y/puppeteer: ')));
+    // Each line names the frame it is about.
+    assert.ok(warnings.every((w) => /^@surea11y\/puppeteer \((data:text\/html,|about:srcdoc).*\): /.test(w)), warnings.join('\n'));
+    assert.strictEqual(warnings.filter((w) => w.startsWith('@surea11y/puppeteer (about:srcdoc): ')).length, 1);
   } finally {
     await browser.close();
   }
