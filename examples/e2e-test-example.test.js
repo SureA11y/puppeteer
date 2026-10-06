@@ -20,7 +20,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const puppeteer = require('puppeteer');
-const { A11yCoreBuilder, formatFailures } = require('../src/index.js');
+const { A11yCoreBuilder, formatFailures, getScanGaps } = require('../src/index.js');
 
 test('flags real accessibility issues (unlabeled button, missing alt)', async () => {
   const browser = await puppeteer.launch();
@@ -40,6 +40,22 @@ test('flags real accessibility issues (unlabeled button, missing alt)', async ()
   }
 });
 
+test('a scope that matches nothing fails the gate instead of passing it', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html lang="en"><head><title>Example</title></head><body><main><h1>Hello</h1></main></body></html>');
+
+    // '#content' is a typo for 'main': nothing is scanned, so no rule fails.
+    const results = await new A11yCoreBuilder({ page }).include('#content').reportOnly(['fail']).analyze();
+
+    assert.strictEqual(results.checksResults.length, 0);
+    assert.deepStrictEqual(getScanGaps(results).map((g) => g.kind), ['context-not-found']);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('a well-formed page has no accessibility violations', async () => {
   const browser = await puppeteer.launch();
   try {
@@ -54,10 +70,15 @@ test('a well-formed page has no accessibility violations', async () => {
       .analyze();
 
     // The real assertion shape you'd use as an accessibility gate in CI --
-    // formatFailures() turns checksResults into a readable block (rule,
-    // severity, selector, hint per occurrence) instead of a bare "not equal
-    // to []" diff, so a failure is scannable straight from CI/terminal output.
-    assert.strictEqual(results.checksResults.length, 0, formatFailures(results.checksResults));
+    // formatFailures() turns the result into a readable block (rule,
+    // severity, location, hint per occurrence, then what the scan left out
+    // and the core release) instead of a bare "not equal to []" diff, so a
+    // failure is scannable straight from CI/terminal output. getScanGaps()
+    // keeps a scope that matched nothing from passing as a clean page.
+    assert.ok(
+      results.checksResults.length === 0 && getScanGaps(results).length === 0,
+      formatFailures(results)
+    );
   } finally {
     await browser.close();
   }
