@@ -1026,3 +1026,45 @@ test('index exports the binding-base helpers a test needs beside formatFailures'
   assert.strictEqual(index.formatOccurrenceLocation, base.formatOccurrenceLocation);
   assert.strictEqual(index.EngineError, base.EngineError);
 });
+
+test('A11yCoreBuilder: analyze() warns on the console about each scan gap, once per scanned frame', async (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (msg) => { warnings.push(String(msg)); });
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      'data:text/html,<html><body><img src="x.png">' +
+      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg src=x.png%3E%3C/body%3E%3C/html%3E"></iframe>' +
+      '</body></html>'
+    );
+    await page.waitForNetworkIdle().catch(() => {});
+
+    await new A11yCoreBuilder({ page })
+      .include('#missing')
+      .options({ customRules: [{ id: 'broken-custom-rule', meta: { title: 'Broken' }, runInPage: 'not a function' }] })
+      .frames(true)
+      .analyze();
+
+    // Top frame: the scope matched nothing, and the custom rule was skipped.
+    // Sub-frame: scanned whole, so only the skipped custom rule.
+    assert.strictEqual(warnings.filter((w) => /Nothing was scanned: the scan scope matched no element \("#missing"\)/.test(w)).length, 1);
+    assert.strictEqual(warnings.filter((w) => /Custom rule "broken-custom-rule" did not run/.test(w)).length, 2);
+    assert.ok(warnings.every((w) => w.startsWith('@surea11y/puppeteer: ')));
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: analyze() warns about nothing when the scan left nothing out', async (t) => {
+  const warn = t.mock.method(console, 'warn', () => {});
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,<html><body><main><img src="x.png"></main></body></html>');
+    await new A11yCoreBuilder({ page }).include('main').analyze();
+    assert.strictEqual(warn.mock.callCount(), 0);
+  } finally {
+    await browser.close();
+  }
+});
