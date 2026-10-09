@@ -188,6 +188,20 @@ const results = await new A11yCoreBuilder({ page })
 
 Invalid input (a missing/empty `id`, or a `runInPage`/`applicability` that's neither a function nor a non-empty string) throws immediately from `.withCustomRules()` itself, rather than surfacing later as a skipped rule deep inside the page — easier to catch during development. A *raw* `.options({ customRules })` call bypasses this check and defers to `@surea11y/core`, which skips a descriptor it can't use without throwing. The result lists each one in `skippedCustomRules` as `{ id, reason }`, and `getScanGaps()`/`formatFailures(results)` report it, so a rule that did not run doesn't look like one that passed.
 
+### Scanning with packs
+
+A pack brings rules, variants of core's rules, a standard or a checklist, and their profiles and messages, from a package of its own (see core's [`ENGINE_OPTIONS.md`, "Packs"](https://github.com/SureA11y/core/blob/main/docs/ENGINE_OPTIONS.md#packs--rules-and-standards-from-outside-core)). `.withPacks()` registers them in the page, and in every frame with `.frames(true)`, before scanning; a profile of theirs runs through `.options({ profile })`. Packs need `@surea11y/core` 1.11 or later.
+
+```js
+const rgaa = require('@surea11y/rgaa');
+
+const result = await new A11yCoreBuilder({ page })
+  .withPacks(rgaa)
+  .options({ profile: 'rgaa-4.1.2' })
+  .analyze();
+result.engine.packs; // ['@surea11y/rgaa@1.0.0']
+```
+
 ### Element addressing beyond a CSS selector
 
 Every occurrence already carries `selector` and (with `.elementRef(true)`, above) a live `ElementHandle`. It also carries `structuralPath` — a sibling-index path from the document root down to the flagged element (e.g. `[1, 0, 2]`) — a more robust identity than a selector string alone, since it survives some DOM changes a selector wouldn't (an id/class rename, for instance). No opt-in needed; it's already on every `fail`/`cantTell` occurrence today. See [`OUTPUT_SCHEMA.md`](https://github.com/SureA11y/core/blob/main/docs/OUTPUT_SCHEMA.md) for the full field description.
