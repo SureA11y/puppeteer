@@ -55,3 +55,26 @@ test('A11yCoreBuilder keeps engine error codes and resolves shadow-DOM element h
     await browser.close();
   }
 });
+
+test('A11yCoreBuilder runs a pack in every frame in firefox', async () => {
+  const browser = await puppeteer.launch({ browser: 'firefox' });
+  try {
+    const page = await browser.newPage();
+    await page.goto(
+      'data:text/html,<html><body><video src="a.mp4" autoplay></video>' +
+      '<iframe srcdoc="%3Cvideo src=b.mp4 autoplay%3E%3C/video%3E"></iframe></body></html>'
+    );
+    await page.waitForNetworkIdle().catch(() => {});
+    const results = await new A11yCoreBuilder({ page })
+      .frames(true)
+      .withPacks(require('../examples/acme-policy-pack.js'))
+      .withRules('acme-no-autoplay')
+      .analyze();
+    assert.strictEqual(results.frames.length, 1);
+    for (const r of [results.topFrame, results.frames[0]]) {
+      assert.deepStrictEqual(r.checksResults.map((c) => [c.ruleId, c.outcome]), [['acme-no-autoplay', 'fail']]);
+    }
+  } finally {
+    await browser.close();
+  }
+});
