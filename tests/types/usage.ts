@@ -1,6 +1,7 @@
 // Compiled, not run, by tests/types.test.js.
 import type { Page } from 'puppeteer';
 import type { ScanResult } from '@surea11y/core';
+import { definePack } from '@surea11y/core/pack';
 import {
   A11yCoreBuilder,
   EngineError,
@@ -15,7 +16,10 @@ declare const page: Page;
 async function run(): Promise<void> {
   const results = await new A11yCoreBuilder({ page })
     .include('main')
+    .withWcag('2.2', 'AA')
+    .withBestPractices()
     .withRules(['img-alt-present'])
+    .withPacks(definePack({ name: '@acme/a11y-rules', version: '1.0.0', namespace: 'acme', core: '^1.11.1' }))
     .reportOnly(['fail', 'cantTell'])
     .elementRef(true)
     .analyze();
@@ -35,6 +39,15 @@ async function run(): Promise<void> {
   const matched: number | undefined = result.contextMatch?.elementCount;
   const skipped: Array<string | null> = result.skippedCustomRules.map((r) => r.id);
   const gaps: ScanGap[] = getScanGaps(result);
+  for (const gap of gaps) {
+    if (gap.kind === 'custom-rule-skipped') {
+      const id: string | null = gap.rule.id;
+    } else if (gap.kind === 'pack-skipped') {
+      const name: string | null = gap.pack.name;
+    } else {
+      const selectors: string[] = gap.selectors;
+    }
+  }
   const message: string = formatFailures(result) + formatFailures(result.checksResults, { outcomes: ['fail'] });
 
   for (const check of result.checksResults) {
@@ -57,5 +70,6 @@ async function errors(): Promise<void> {
     await new A11yCoreBuilder({ page }).withRules('no-such-rule').analyze();
   } catch (e) {
     if (e instanceof EngineError && e.code === 'INVALID_RUN_ONLY') String(e.selector);
+    if (e instanceof EngineError && e.code === 'INVALID_ENGINE_OPTIONS') String(e.message);
   }
 }

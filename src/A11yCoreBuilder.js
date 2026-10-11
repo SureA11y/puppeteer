@@ -134,6 +134,9 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
    */
   async analyze() {
     const { contextSelector, engineOptions, runOnly } = this._buildEngineArgs();
+    // The script that registers withPacks()'s packs in a frame, which the
+    // scan names in engineOptions.packs; null without packs.
+    const packScript = this._packScript();
 
     // Unlike Playwright's page.evaluate(fn, arg), which only accepts a
     // SINGLE argument (forcing a hand-built single-arg wrapper there --
@@ -150,9 +153,6 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // An engine error (INVALID_RUN_ONLY, INVALID_CONTEXT_SELECTOR) comes
     // back as a plain object and is thrown here as an EngineError with its
     // `code`; any other error in the page rejects evaluate() as before.
-    // The script that registers withPacks()'s packs in a frame, which the
-    // scan names in engineOptions.packs; null without packs.
-    const packScript = this._packScript();
     const runInFrame = async (frameOrPage, frameContextSelector) => {
       const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
       if (packScript) await frameOrPage.evaluate(packScript);

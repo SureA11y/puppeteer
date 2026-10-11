@@ -33,7 +33,15 @@ export {
   formatOccurrenceLocation,
   EngineError
 } from '@surea11y/binding-base';
-export type { ScanGap, EngineErrorCode, OccurrenceLocation } from '@surea11y/binding-base';
+export type {
+  ScanGap,
+  EngineErrorCode,
+  OccurrenceLocation,
+  PackLike,
+  WcagVersion,
+  WcagLevel
+} from '@surea11y/binding-base';
+import type { PackLike, WcagVersion, WcagLevel } from '@surea11y/binding-base';
 
 export type Category = Core.RuleMeta['category'];
 export type LocaleResolutionReason = Core.LocaleResolution['reason'];
@@ -119,6 +127,14 @@ export class A11yCoreBuilder {
   withRules(ruleIds: string | string[]): this;
   /** Never run these specific rule IDs (applied after withRules). */
   disableRules(ruleIds: string | string[]): this;
+  /**
+   * Run the rules for a WCAG conformance target: `withWcag('2.2', 'AA')`
+   * runs those of WCAG 2.2's A and AA criteria. withTags()/withRules() add
+   * to them. A later call replaces the target.
+   */
+  withWcag(version: WcagVersion | 2.0 | 2.1 | 2.2, level?: WcagLevel): this;
+  /** Also run the best-practice rules, those that name no WCAG criterion. */
+  withBestPractices(enabled?: boolean): this;
   /** Merge arbitrary engineOptions (locale, contrast.mode, policyContract, ...). */
   options(partialEngineOptions: Record<string, unknown>): this;
   /** Register one or more custom rules for just this scan. Call multiple times to accumulate. */
@@ -127,7 +143,7 @@ export class A11yCoreBuilder {
    * Packs from `@surea11y/core/pack` (core 1.11 or later): registered in each
    * frame before the scan, and named in `engineOptions.packs`.
    */
-  withPacks(packs: object | object[]): this;
+  withPacks(packs: PackLike | PackLike[]): this;
   /** Post-filter checksResults down to only the given outcomes. */
   reportOnly(outcomes: Core.Outcome | Core.Outcome[]): this;
   /** Opt in to also scanning every sub-frame on the page (including cross-origin iframes). */
@@ -138,9 +154,13 @@ export class A11yCoreBuilder {
   /**
    * Runs the scan. Returns { topFrame, frames } instead of a single result
    * when .frames(true) was used; include() then scopes the top frame only,
-   * and each sub-frame is scanned whole. Rejects with an EngineError
-   * (`code` 'INVALID_RUN_ONLY' or 'INVALID_CONTEXT_SELECTOR') for input the
-   * engine cannot use.
+   * and each sub-frame is scanned whole. Rejects with an EngineError for
+   * input the engine cannot use, with its `code`: 'INVALID_RUN_ONLY'
+   * (withRules()/withTags() named no rule or tag it knows),
+   * 'INVALID_CONTEXT_SELECTOR' (an include() selector the browser can't
+   * parse), 'INVALID_ENGINE_OPTIONS' (an option `strictOptions: true`
+   * rejects) or 'PAGE_BUILTINS_BROKEN' (the page's scripts broke a
+   * JavaScript built-in the engine relies on).
    */
   analyze(): Promise<A11yCoreResult | A11yCoreMultiFrameResult>;
 }
