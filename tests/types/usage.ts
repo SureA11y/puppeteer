@@ -18,6 +18,7 @@ async function run(): Promise<void> {
     .include('main')
     .withWcag('2.2', 'AA')
     .withBestPractices()
+    .includeMode('or')
     .withRules(['img-alt-present'])
     .withPacks(definePack({ name: '@acme/a11y-rules', version: '1.0.0', namespace: 'acme', core: '^1.11.1' }))
     .reportOnly(['fail', 'cantTell'])
