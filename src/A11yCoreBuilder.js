@@ -5,8 +5,7 @@ const {
   A11yCoreBuilderBase,
   createInPageScan,
   rethrowEngineError,
-  queryOccurrenceElement,
-  getScanGaps
+  queryOccurrenceElement
 } = require('@surea11y/binding-base');
 
 // core's scan, wrapped so an engine error keeps its `code` across
@@ -159,7 +158,7 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       const result = rethrowEngineError(
         await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, engineOptions, runOnly)
       );
-      warnScanGaps(result);
+      this._warnScanGaps(result, '@surea11y/puppeteer');
       return this._elementRef ? this._attachElementRefs(frameOrPage, result) : result;
     };
 
@@ -222,17 +221,6 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       }
     }
     return result;
-  }
-}
-
-// Says on the console what the scan left out (an include() scope that
-// matched nothing, a custom rule the engine did not run), one line per gap,
-// so a scan that skipped something does not pass unnoticed as clean. Once
-// per scanned frame; the gaps also stay readable through getScanGaps().
-function warnScanGaps(result) {
-  for (const gap of getScanGaps(result)) {
-    const where = result.url ? ` (${result.url})` : '';
-    console.warn(`@surea11y/puppeteer${where}: ${gap.message}`);
   }
 }
 
