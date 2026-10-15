@@ -1,16 +1,22 @@
 {
   "name": "@surea11y/puppeteer",
   "version": "1.3.0",
-  "description": "Puppeteer binding for surea11y -- scan real, live-rendered pages for accessibility issues.",
+  "description": "Accessibility (a11y, WCAG) checks for Puppeteer scripts and tests: scan the live page with new A11yCoreBuilder({ page }).analyze() and get only proven violations, with findings that need human review listed separately.",
   "keywords": [
     "accessibility",
     "a11y",
+    "a11y-testing",
     "wcag",
+    "wcag21",
     "wcag22",
+    "en301549",
+    "en-301-549",
+    "european-accessibility-act",
     "accessibility-testing",
     "puppeteer",
     "e2e",
     "e2e-testing",
+    "end-to-end",
     "audit",
     "aria",
     "surea11y"
