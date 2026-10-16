@@ -1,6 +1,6 @@
 'use strict';
 
-const { runa11yCoreInPage } = require('@surea11y/core');
+const { runa11yCoreInPage, internalsHookScript } = require('@surea11y/core');
 const {
   A11yCoreBuilderBase,
   createInPageScan,
@@ -119,6 +119,23 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
    *   `page` must already be navigated to and settled at the URL to scan --
    *   this class does not navigate for you.
    */
+  /**
+   * Installs @surea11y/core's opt-in internals hook in `page`, so a scan can
+   * read the names, states and roles web components set through a private
+   * ElementInternals. Call it before page.goto(): Puppeteer runs the script
+   * before the page's own scripts in every frame, and again after each
+   * navigation (page.evaluateOnNewDocument()). The page already loaded when
+   * it is called doesn't get it, nor does a tab the page opens itself.
+   * Resolves to what evaluateOnNewDocument() resolves to.
+   * @param {import('puppeteer').Page} page
+   */
+  static installInternalsHook(page) {
+    if (!page || typeof page.evaluateOnNewDocument !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installInternalsHook() requires a Puppeteer Page (with an .evaluateOnNewDocument() method).');
+    }
+    return page.evaluateOnNewDocument(internalsHookScript());
+  }
+
   constructor({ page, url } = {}) {
     super({ url });
     if (!page || typeof page.evaluate !== 'function') {

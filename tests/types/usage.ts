@@ -7,20 +7,26 @@ import {
   EngineError,
   formatFailures,
   formatOccurrenceLocation,
-  getScanGaps
+  getScanGaps,
+  getScanNotes
 } from '../../src/index';
 import type { A11yCoreResult, A11yCoreMultiFrameResult, Occurrence, ScanGap } from '../../src/index';
 
 declare const page: Page;
 
 async function run(): Promise<void> {
+  await A11yCoreBuilder.installInternalsHook(page);
+  const planned = new A11yCoreBuilder({ page }).withWcag('2.2', 'aa').wcagLevel('aa');
+  const plannedIds: string[] = planned.plannedChecks().map((c) => c.ruleId).concat(planned.plannedCriteria().map((r) => r.id));
+  void plannedIds;
+
   const results = await new A11yCoreBuilder({ page })
     .include('main')
     .withWcag('2.2', 'AA')
     .withBestPractices()
     .includeMode('or')
     .wcagLevel('AA')
-    .logger((gap, frame) => { void `${frame.url}: ${gap.kind} ${gap.message}`; })
+    .logger((entry, frame) => { void `${frame.url}: ${entry.kind} ${entry.message}`; })
     .withRules(['img-alt-present'])
     .withPacks(definePack({ name: '@acme/a11y-rules', version: '1.0.0', namespace: 'acme', core: '^1.11.1' }))
     .reportOnly(['fail', 'cantTell'])
@@ -42,6 +48,10 @@ async function run(): Promise<void> {
   const matched: number | undefined = result.contextMatch?.elementCount;
   const skipped: Array<string | null> = result.skippedCustomRules.map((r) => r.id);
   const gaps: ScanGap[] = getScanGaps(result);
+  for (const note of getScanNotes(result)) {
+    if (note.kind === 'internals-hook') note.elementCount.toFixed();
+    else note.message.toUpperCase();
+  }
   for (const gap of gaps) {
     if (gap.kind === 'custom-rule-skipped') {
       const id: string | null = gap.rule.id;

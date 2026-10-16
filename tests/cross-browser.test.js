@@ -78,3 +78,21 @@ test('A11yCoreBuilder runs a pack in every frame in firefox', async () => {
     await browser.close();
   }
 });
+
+test('A11yCoreBuilder.installInternalsHook() works in firefox', async () => {
+  const browser = await puppeteer.launch({ browser: 'firefox' });
+  try {
+    const page = await browser.newPage();
+    await A11yCoreBuilder.installInternalsHook(page);
+    await page.goto('data:text/html,' + encodeURIComponent(
+      '<!doctype html><html lang="en"><head><title>t</title><script>' +
+      "customElements.define('x-check', class extends HTMLElement { #i; constructor() { super(); this.#i = this.attachInternals(); this.#i.ariaLabel = 'Subscribe'; this.#i.ariaChecked = 'false'; } });" +
+      '</script></head><body><main><h1>Hi</h1><x-check role="checkbox"></x-check></main></body></html>'
+    ));
+    const results = await new A11yCoreBuilder({ page }).withRules('binary-control-name-present').analyze();
+    assert.strictEqual(results.engine.environment.internalsHook, 'early');
+    assert.strictEqual(results.checksResults[0].outcome, 'pass');
+  } finally {
+    await browser.close();
+  }
+});
