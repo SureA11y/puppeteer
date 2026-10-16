@@ -8,7 +8,7 @@ A Puppeteer binding for [`@surea11y/core`](https://github.com/SureA11y/core) —
 npm install @surea11y/puppeteer puppeteer
 ```
 
-`@surea11y/core` 1.11.1 or later comes with it as a peer dependency, as Puppeteer does: npm 7 and later, and pnpm 8 and later, install it for you, so the line above is all you need. With Yarn 1 or npm 6, which don't install peers, add `@surea11y/core` to that line.
+`@surea11y/core` 1.12.0 or later comes with it as a peer dependency, as Puppeteer does: npm 7 and later, and pnpm 8 and later, install it for you, so the line above is all you need. With Yarn 1 or npm 6, which don't install peers, add `@surea11y/core` to that line.
 
 Being a peer means your project and this binding share one copy of core. That matters as soon as your project uses core directly, to write a SARIF log or an HTML report (`@surea11y/core/sarif`, `/report`), read the rule catalogue, or keep a baseline: those read results with the same core that produced them, so a report never labels a finding with another release's rules. It holds when you bring your own core too: a linked checkout (`file:../core`), a monorepo, a fork, or a pinned release. Before 1.4.0, core was a regular dependency, and a project whose core differed from the binding's got a second copy without a word; such a project needed `"overrides": { "@surea11y/core": "$@surea11y/core" }` in its `package.json`, which it can now drop.
 
@@ -38,13 +38,13 @@ console.log(results.checksResults.filter(r => r.outcome === 'fail'));
 await browser.close();
 ```
 
-`results` is `@surea11y/core`'s own native result shape — see its [`OUTPUT_SCHEMA.md`](https://github.com/SureA11y/core/blob/main/docs/OUTPUT_SCHEMA.md) — not the `violations`/`passes`/`incomplete`/`inapplicable` shape used by other popular accessibility testing tools. The builder's *method names* are modeled on common conventions in this space for migration familiarity; the richer result schema is kept as-is. `results.engine.version` names the `@surea11y/core` release that produced it (such as `"1.11.1"`); quote it in a bug report.
+`results` is `@surea11y/core`'s own native result shape — see its [`OUTPUT_SCHEMA.md`](https://github.com/SureA11y/core/blob/main/docs/OUTPUT_SCHEMA.md) — not the `violations`/`passes`/`incomplete`/`inapplicable` shape used by other popular accessibility testing tools. The builder's *method names* are modeled on common conventions in this space for migration familiarity; the richer result schema is kept as-is. `results.engine.version` names the `@surea11y/core` release that produced it (such as `"1.12.0"`); quote it in a bug report.
 
-From 1.3.0 this package needs `@surea11y/core` 1.11.1 or later, which npm installs with it as a peer (see [Install](#install)). Core's rules and messages change between its releases; see [What changes with `@surea11y/core` 1.11](#what-changes-with-surea11ycore-111) below and core's [changelog](https://github.com/SureA11y/core/blob/main/CHANGELOG.md).
+From 1.4.0 this package needs `@surea11y/core` 1.12.0 or later, which npm installs with it as a peer (see [Install](#install)). Core's rules and messages change between its releases; see [What changes with `@surea11y/core` 1.12](#what-changes-with-surea11ycore-112) below and core's [changelog](https://github.com/SureA11y/core/blob/main/CHANGELOG.md).
 
 Also see `examples/basic-scan.js` for a runnable script (`npm run example -- <url>`).
 
-`.withWcag(version, level)` selects by conformance target: `.withWcag('2.2', 'AA')` runs the rules for WCAG 2.2's Level A and AA criteria, by the level each criterion has in that version (4.1.1 Parsing, which 2.2 removed, is part of a `'2.1'` target and not of a `'2.2'` one). `.withBestPractices()` adds the rules that name no WCAG criterion, such as `region` and `heading-order`; on its own it runs only those. `.withRules()` and `.withTags()` add to a target's rules, and the disable methods apply after. A version other than `'2.0'`, `'2.1'` or `'2.2'`, or a level other than `'A'`, `'AA'` or `'AAA'`, throws a `TypeError` with `code: 'INVALID_RUN_ONLY'` at the call. Both need `@surea11y/core` 1.11 or later.
+`.withWcag(version, level)` selects by conformance target: `.withWcag('2.2', 'AA')` runs the rules for WCAG 2.2's Level A and AA criteria, by the level each criterion has in that version (4.1.1 Parsing, which 2.2 removed, is part of a `'2.1'` target and not of a `'2.2'` one). `.withBestPractices()` adds the rules that name no WCAG criterion, such as `region` and `heading-order`; on its own it runs only those. `.withRules()` and `.withTags()` add to a target's rules, and the disable methods apply after. The level is read in any case (`'aa'` is `'AA'`). A version other than `'2.0'`, `'2.1'` or `'2.2'`, or a level other than A, AA or AAA, throws a `TypeError` with `code: 'INVALID_RUN_ONLY'` at the call. Both need `@surea11y/core` 1.11 or later.
 
 `withTags()`/`disableRules()` have counterparts: `.withRules([...])` (only run these specific rule IDs) and `.disableTags([...])` (never run rules carrying any of these tags). All four compose the same way similar allow/deny-list options do in other accessibility testing tools, with one non-obvious rule worth knowing: a "disable" always wins over a "with" on the same ID/tag (e.g. `.withRules(['a']).disableRules(['a'])` drops `'a'` entirely), and combining `.withRules()` **and** `.withTags()` together requires a rule to satisfy *both* (`@surea11y/core`'s default `includeMode: 'and'` — see [`ENGINE_OPTIONS.md`](https://github.com/SureA11y/core/blob/main/docs/ENGINE_OPTIONS.md)), not either one, unless you ask for that with `.includeMode('or')` (below).
 
@@ -69,7 +69,17 @@ const results = await new A11yCoreBuilder({ page })
   .analyze();
 ```
 
-Without `.wcagLevel('AA')`, that scan reports 1.4.6 as well, so a site that meets AA can show a failing AAA criterion it never aimed for. With it, the scan reports 1.4.3 alone, and `results.engine.wcagLevel` says `'AA'`. A `.withWcag()` target already implies its level; `.wcagLevel()` is for selections that don't, and wins when both are given, as it does over a level given through `.options()`. `'A'`, `'AA'` or `'AAA'` in any case is accepted. Anything else throws a `TypeError` with `code: 'INVALID_ENGINE_OPTIONS'` at the call, and `null` clears it. Needs the `@surea11y/core` release after 1.11.1.
+Without `.wcagLevel('AA')`, that scan reports 1.4.6 as well, so a site that meets AA can show a failing AAA criterion it never aimed for. With it, the scan reports 1.4.3 alone, and `results.engine.wcagLevel` says `'AA'`. A `.withWcag()` target already implies its level; `.wcagLevel()` is for selections that don't, and wins when both are given, as it does over a level given through `.options()`. `'A'`, `'AA'` or `'AAA'` in any case is accepted. Anything else throws a `TypeError` with `code: 'INVALID_ENGINE_OPTIONS'` at the call, and `null` clears it. Needs `@surea11y/core` 1.12.0 or later.
+
+`.plannedChecks()` and `.plannedCriteria()` say what a scan *will* check before you run it: the rules it runs (entries with `ruleId`) and the criteria it reports in `rulesResults` (entries with `id`), worked out in Node from the same selection and options, with no page. Use them to record what a run covered next to its result, or to catch a selection that runs nothing, which would otherwise look like a clean scan:
+
+```js
+const builder = new A11yCoreBuilder({ page }).withTags('forms').withRules('contrast-computable');
+if (builder.plannedChecks().length === 0) {
+  throw new Error('This selection runs no rule. Did you mean .includeMode("or")?');
+}
+const results = await builder.analyze();
+```
 
 Each of the four takes a string or an array of strings. Anything else, such as `undefined` from a missing config value or an empty string, throws a `TypeError` with `code: 'INVALID_RUN_ONLY'` at the call. A list that names nothing the engine knows (`.withRules(['img-alt-presnt'])`) makes `analyze()` reject instead; see [Errors](#errors).
 
@@ -99,7 +109,7 @@ assert.ok(
 );
 ```
 
-`getScanGaps(results)` lists what the scan left out, which `checksResults` alone would pass over as clean: an `.include()` scope that matched nothing (`kind: 'context-not-found'`; nothing was scanned, so every rule reports `notApplicable`), some of several `.include()` selectors that matched nothing (`'context-partly-not-found'`), each custom rule the engine did not run (`'custom-rule-skipped'`, with the engine's reason), and each pack the page did not run (`'pack-skipped'`, from `results.skippedPacks`; see [Scanning with packs](#scanning-with-packs-standards-checklists-and-your-own-rules)). Each gap has a `message`. Checking it is what keeps a mistyped scope from passing the gate. `analyze()` also prints each gap's message with `console.warn` (as `@surea11y/puppeteer (<frame url>): <message>`, once per scanned frame under `.frames(true)`), so a scan that left something out shows in the log even where nothing asserts on it.
+`getScanGaps(results)` lists what the scan left out, which `checksResults` alone would pass over as clean: an `.include()` scope that matched nothing (`kind: 'context-not-found'`; nothing was scanned, so every rule reports `notApplicable`), some of several `.include()` selectors that matched nothing (`'context-partly-not-found'`), each custom rule the engine did not run (`'custom-rule-skipped'`, with the engine's reason; a custom rule you excluded yourself with `.disableRules()` is not a gap), and each pack the page did not run (`'pack-skipped'`, from `results.skippedPacks`; see [Scanning with packs](#scanning-with-packs-standards-checklists-and-your-own-rules)). Each gap has a `message`. Checking it is what keeps a mistyped scope from passing the gate. `analyze()` also prints each gap's message with `console.warn` (as `@surea11y/puppeteer (<frame url>): <message>`, once per scanned frame under `.frames(true)`), so a scan that left something out shows in the log even where nothing asserts on it.
 
 That warning is the right default for a test run. A project that already handles gaps itself can take them over with `.logger(fn)`: `fn(gap, result)` is called once per gap, with the gap as `getScanGaps()` gives it and the result of the frame it came from, instead of `console.warn`. A scanning service that shows gaps to its users, say, can send them once to its own structured log, rather than also printing a loose line on the server's console for every scan:
 
@@ -111,6 +121,8 @@ const results = await new A11yCoreBuilder({ page })
 ```
 
 A batch job that writes `getScanGaps(results)` into its own report can pass `.logger(() => {})` to keep its output to the report, and `.logger(null)` brings `console.warn` back. Anything other than a function or `null` throws a `TypeError` at the call, and a later call replaces the logger. Either way, `getScanGaps(results)` still lists every gap.
+
+`getScanNotes(results)` says how the page was scanned, which a gap doesn't cover, and nothing was left out: `'forced-colors'` when the page was shown in [forced colors](#forced-colors), and `'internals-hook'` when the scan asked about web components it could have read with the [internals hook](#web-components-the-internals-hook). `analyze()` also prints the internals note, once per scan, and a `.logger()` receives it (check `kind` to tell a note from a gap).
 
 See `examples/e2e-test-example.test.js` for a fuller, runnable version (`npm run example:e2e`) — one test proving real violations get caught (unlabeled button, missing `alt`), one proving a mistyped `.include()` scope is caught rather than passed, one proving a well-formed page passes cleanly, and one gating a page on a pack's checklist. It uses `node:test` directly rather than a dedicated test-runner package: Puppeteer has no first-party test runner the way `@playwright/test` is the default for Playwright, and `node:test` is a zero-new-dependency choice that already matches this project's own test suite.
 
@@ -126,7 +138,7 @@ AssertionError [ERR_ASSERTION]: 1) button-name-present (serious): This button ha
    at html > body > img
    Add an alt attribute that says what the image shows, or alt="" if the image is purely decorative.
 
-Scanned with @surea11y/core 1.11.1.
+Scanned with @surea11y/core 1.12.0.
 ```
 
 and a scope that matched nothing prints:
@@ -134,8 +146,10 @@ and a scope that matched nothing prints:
 ```
 AssertionError [ERR_ASSERTION]: Nothing was scanned: the scan scope matched no element ("#main").
 
-Scanned with @surea11y/core 1.11.1.
+Scanned with @surea11y/core 1.12.0.
 ```
+
+Before the version line, it also prints the result's notes (`getScanNotes()`, above), such as `The page was shown in forced colors (high contrast); contrast findings may differ with forced colors off.`
 
 An element inside a shadow tree is located through its shadow hosts, as `my-app >>> my-card >>> img`; `formatOccurrenceLocation(occurrence)` gives that line on its own. Passing `results.checksResults` instead of `results` still works and lists the findings alone.
 
@@ -206,6 +220,52 @@ This resolves the occurrence to an `ElementHandle` instead of leaving you to re-
 
 Each `ElementHandle` holds a browser-side reference until garbage collected or explicitly disposed — for a scan with many violations that you're keeping around a while (rather than using immediately, as above), call `occurrence.elementHandle.dispose()` when you're done with it, per [Puppeteer's own `ElementHandle` guidance](https://pptr.dev/api/puppeteer.elementhandle).
 
+### Web components: the internals hook
+
+Many web components keep their `ElementInternals` in a private field and name themselves, set their states or give themselves a role through it:
+
+```js
+class SubscribeCheckbox extends HTMLElement {
+  #internals = this.attachInternals();
+  constructor() {
+    super();
+    this.#internals.ariaLabel = 'Subscribe';
+    this.#internals.ariaChecked = 'false';
+  }
+}
+```
+
+The browser exposes that name, but no page script can read it back, so by default the scan asks about such a component (`cantTell`) instead of judging it. A component that's a `switch` only through `this.#internals.role` isn't even asked about: the scan doesn't see its role, so it isn't checked at all.
+
+`A11yCoreBuilder.installInternalsHook(page)` installs `@surea11y/core`'s opt-in hook, which records each component's internals for the scan to read. Call it **before** `page.goto()`:
+
+```js
+const page = await browser.newPage();
+await A11yCoreBuilder.installInternalsHook(page); // before goto
+await page.goto('https://example.com/');
+
+const results = await new A11yCoreBuilder({ page }).analyze();
+results.engine.environment.internalsHook; // 'early': the hook ran before the page's scripts
+```
+
+With it, the checkbox above passes, an unnamed component that attaches internals fails like any unnamed control, and the switch is checked as a switch, so it fails without a name. Puppeteer runs the hook before the page's own scripts in every frame, and again after each navigation (`page.evaluateOnNewDocument()`), so one call covers the page for its lifetime. It works in Chrome and Firefox.
+
+- **Before the page loads.** On a page that's already loaded, the call has no effect until the next navigation (a reload will do), and the result has no `internalsHook`. A new tab the page opens itself doesn't get it either.
+- **For test and audit runs.** The hook wraps `HTMLElement.prototype.attachInternals` (components get the same internals back), adds a stack frame to errors thrown through it, and keeps its record under a global symbol, where any script on the page can read every component's internals. That's why it's opt-in.
+- **Without it**, `analyze()` says so once per scan when it asked about such components (`1 custom element was asked about because the scan could not read...`), and `getScanNotes()` gives that note as `kind: 'internals-hook'`.
+
+### Forced colors
+
+A page shown in forced colors (Windows high contrast) draws in the user's colors, not its own. `results.engine.environment.forcedColors` says which it was: `'active'` or `'none'`. To check a page under forced colors on purpose, emulate it before scanning:
+
+```js
+await page.emulateMediaFeatures([{ name: 'forced-colors', value: 'active' }]);
+const results = await new A11yCoreBuilder({ page }).analyze();
+results.engine.environment.forcedColors; // 'active'
+```
+
+This works in Chrome. In Firefox, Puppeteer can't emulate it: `emulateMediaFeatures()` throws, saying it needs CDP. The contrast rules still measure the page's own colors under forced colors, since WCAG judges contrast in those, so results match a scan with forced colors off; a contrast finding the engine couldn't measure that way carries `details.forcedColors: true`. When forced colors were active, `formatFailures()` adds a line saying so, since it's easy to miss on a CI agent with high contrast turned on.
+
 ### Registering a custom rule at runtime
 
 `@surea11y/core` supports registering additional rules per-scan via `engineOptions.customRules`. Use `.withCustomRules()` to register one:
@@ -237,6 +297,8 @@ const results = await new A11yCoreBuilder({ page })
 ```
 
 **Why `.withCustomRules()` instead of the raw `.options({ customRules })` passthrough** (still supported, and composes with this method if you use both): `runInPage`/`applicability` must reach the page as a function-source *string*, not a live `Function` — a Puppeteer `page.evaluate()` argument crosses a serialization boundary that can't carry a live function reference, only a string `@surea11y/core` can reconstruct with `new Function` on the page side. Passing a raw live function via `.options()` directly would silently fail to serialize; `.withCustomRules()` calls `.toString()` on a live function for you, so you can write a normal function and not have to remember that constraint yourself. A string is still accepted as-is if you already have one.
+
+A custom rule you turn off for one scan (`.withCustomRules(rules).disableRules('org-banner-text')`) is listed in `skippedCustomRules` with `excluded: true` and isn't a scan gap, so it isn't warned about (core 1.12.0 and later).
 
 Invalid input (a missing/empty `id`, or a `runInPage`/`applicability` that's neither a function nor a non-empty string) throws immediately from `.withCustomRules()` itself, rather than surfacing later as a skipped rule deep inside the page — easier to catch during development. A *raw* `.options({ customRules })` call bypasses this check and defers to `@surea11y/core`, which skips a descriptor it can't use without throwing. The result lists each one in `skippedCustomRules` as `{ id, reason }`, and `getScanGaps()`/`formatFailures(results)` report it, so a rule that did not run doesn't look like one that passed.
 
@@ -312,7 +374,23 @@ try {
 
 ## TypeScript
 
-`src/A11yCoreBuilder.d.ts` (re-exported from `src/index.d.ts`, wired up via `package.json`'s `types` field) ships types for the whole builder API plus `@surea11y/core`'s native result shapes (`A11yCoreResult`, `CheckResult`, `Occurrence`, `CompositeResult`, etc.). The result shapes are `@surea11y/core`'s own types (its `ScanResult` and the rest), with `elementHandle` added to an occurrence, so they follow the engine: `engine.version`, `contextMatch`, `skippedCustomRules`, `shadowHostSelectors` and `margin` are all declared. `EngineError`, `ScanGap` and `EngineErrorCode` come from `@surea11y/binding-base`, and so do the types of `withWcag()` (`WcagVersion`, `WcagLevel`) and `withPacks()`, which takes a pack made with `definePack` (`PackLike`). Code that handles every `ScanGap` kind it knows and treats the rest in an `else` branch needs a branch for `'pack-skipped'`, which carries `pack` rather than `selectors`. `analyze()` is typed `Promise<A11yCoreResult | A11yCoreMultiFrameResult>` — narrow on `'topFrame' in results` (or cast, if you already know which mode you called) to get the specific shape back, since a fluent builder can't statically track that `.frames(true)` was called earlier in the chain. `puppeteer` is a `peerDependencies` entry (not just `devDependencies`) since the class's `page` argument and `Occurrence#elementHandle` both come from it — consumers need their own `puppeteer` install for the types to resolve, same as they already do to construct a `Page` in the first place.
+`src/A11yCoreBuilder.d.ts` (re-exported from `src/index.d.ts`, wired up via `package.json`'s `types` field) ships types for the whole builder API plus `@surea11y/core`'s native result shapes (`A11yCoreResult`, `CheckResult`, `Occurrence`, `CompositeResult`, etc.). The result shapes are `@surea11y/core`'s own types (its `ScanResult` and the rest), with `elementHandle` added to an occurrence, so they follow the engine: `engine.version`, `contextMatch`, `skippedCustomRules`, `shadowHostSelectors` and `margin` are all declared. `EngineError`, `ScanGap`, `ScanNote` and `EngineErrorCode` come from `@surea11y/binding-base`, and so do the types of `withWcag()` and `wcagLevel()` (`WcagVersion`, `WcagLevelInput`), of `plannedChecks()`/`plannedCriteria()` (`PlannedCheck`, `PlannedCriterion`) and of `withPacks()`, which takes a pack made with `definePack` (`PackLike`). `A11yCoreBuilder.installInternalsHook(page)` is typed as a static method. Code that handles every `ScanGap` kind it knows and treats the rest in an `else` branch needs a branch for `'pack-skipped'`, which carries `pack` rather than `selectors`. `analyze()` is typed `Promise<A11yCoreResult | A11yCoreMultiFrameResult>` — narrow on `'topFrame' in results` (or cast, if you already know which mode you called) to get the specific shape back, since a fluent builder can't statically track that `.frames(true)` was called earlier in the chain. `puppeteer` is a `peerDependencies` entry (not just `devDependencies`) since the class's `page` argument and `Occurrence#elementHandle` both come from it — consumers need their own `puppeteer` install for the types to resolve, same as they already do to construct a `Page` in the first place.
+
+## What changes with `@surea11y/core` 1.12
+
+This release needs `@surea11y/core` 1.12.0. What a scan through this binding shows differently (core's [`CHANGELOG.md`](https://github.com/SureA11y/core/blob/main/CHANGELOG.md) has the full list):
+
+- **An empty heading now fails an unscoped scan.** `empty-heading` used to ask about a heading with no accessible name; it now fails it. It's a best practice, so it runs in a scan that selects nothing and with `.withBestPractices()`, not under `.withWcag()`, tags or a profile. A gate on a page with `<h2></h2>` that asserted no failures now fails: fix the heading, or scan a WCAG target.
+- **Scans that pick rules report their criteria.** `.withRules('img-alt-present')`, a non-WCAG tag or `.withBestPractices()` now fill `rulesResults` with the WCAG criteria those rules belong to, where it was empty. A criterion whose other rules weren't selected is `cantTell` (`reasonCode` `composite.rollup.cantTell.notSelectedChild`), and each check's `rollupIds` names the criteria it was added for. `.wcagLevel()` keeps those criteria to a level.
+- **Four rules count towards more criteria**, as W3C's ACT rules map them: `input-image-alt-present` adds 4.1.2, `aria-roles-valid` 1.3.1, `link-name-present` 2.4.9 (AAA), and `meta-refresh-timing-absent` 2.2.4 and 3.2.5 (AAA). The findings don't change; the 1.3.1 and 4.1.2 rollups can now fail where they passed.
+- **Unnamed custom elements are questions.** A defined custom element with no visible name may name itself through `ElementInternals`, so it's `cantTell` (`name_internals`) where it used to fail. [`installInternalsHook()`](#web-components-the-internals-hook) lets the engine decide.
+- **`engine.wcagLevel`** records the level a scan was gated by, and [`.wcagLevel()`](#usage) sets it.
+- **`engine.environment.forcedColors`** records whether the page was in [forced colors](#forced-colors).
+- **A custom rule you exclude** isn't a scan gap any more, so `.disableRules()` of one prints no warning.
+- **Rule IDs in another case select their rule**: `.withRules('IMG-ALT-PRESENT')` used to throw `INVALID_RUN_ONLY` or be ignored.
+- **`runOnly.optInTags` on its own throws** `INVALID_RUN_ONLY`; it was accepted and did nothing. Opt-in rules are unlocked with `.options({ optInRules })`.
+- **A finding in a shadow tree is located through its hosts**, as `#card >>> img`, in core's HTML report, SARIF, JUnit and baselines, as `formatFailures()` already did.
+- **An inline `policyContract`** with an unknown value in `allowedOutcomes` or `allowedConfidence` drops that value with a warning, where it turned every check into `cantTell`.
 
 ## What changes with `@surea11y/core` 1.11
 

@@ -30,18 +30,23 @@ export type {
 export {
   formatFailures,
   getScanGaps,
+  getScanNotes,
   formatOccurrenceLocation,
   EngineError
 } from '@surea11y/binding-base';
 export type {
   ScanGap,
+  ScanNote,
+  PlannedCheck,
+  PlannedCriterion,
+  WcagLevelInput,
   EngineErrorCode,
   OccurrenceLocation,
   PackLike,
   WcagVersion,
   WcagLevel
 } from '@surea11y/binding-base';
-import type { PackLike, WcagVersion, WcagLevel } from '@surea11y/binding-base';
+import type { PackLike, WcagVersion, WcagLevelInput, ScanGap, ScanNote, PlannedCheck, PlannedCriterion } from '@surea11y/binding-base';
 
 export type Category = Core.RuleMeta['category'];
 export type LocaleResolutionReason = Core.LocaleResolution['reason'];
@@ -110,6 +115,14 @@ export class A11yCoreBuilder {
    */
   constructor(opts: { page: Page; url?: string });
 
+  /**
+   * Installs @surea11y/core's opt-in internals hook in `page`, so a scan can
+   * read names, states and roles web components set through a private
+   * ElementInternals. Call it before page.goto(): it runs before the page's
+   * scripts in every frame and after each navigation.
+   */
+  static installInternalsHook(page: Page): ReturnType<Page['evaluateOnNewDocument']>;
+
   /** Scope the scan to one region. Call multiple times for a multi-region union. */
   include(selector: string): this;
   /**
@@ -132,7 +145,7 @@ export class A11yCoreBuilder {
    * runs those of WCAG 2.2's A and AA criteria. withTags()/withRules() add
    * to them. A later call replaces the target.
    */
-  withWcag(version: WcagVersion | 2.0 | 2.1 | 2.2, level?: WcagLevel): this;
+  withWcag(version: WcagVersion | 2.0 | 2.1 | 2.2, level?: WcagLevelInput): this;
   /** Also run the best-practice rules, those that name no WCAG criterion. */
   withBestPractices(enabled?: boolean): this;
   /**
@@ -146,13 +159,14 @@ export class A11yCoreBuilder {
    * rules run: `.withRules('contrast-computable').wcagLevel('AA')` reports
    * 1.4.3 and not 1.4.6. Any case; null clears it. A later call replaces it.
    */
-  wcagLevel(level: WcagLevel | 'a' | 'aa' | 'aaa' | null): this;
+  wcagLevel(level: WcagLevelInput | null): this;
   /**
    * Where analyze() sends each scan gap instead of console.warn: called once
-   * per gap, with the result of the frame it came from. `() => {}` silences
-   * them, `null` goes back to console.warn. A later call replaces it.
+   * per gap, with the result of the frame it came from, and once per scan
+   * for the internals-hook note (tell them apart by `kind`). `() => {}`
+   * silences them, `null` goes back to console.warn. A later call replaces it.
    */
-  logger(fn: ((gap: import('@surea11y/binding-base').ScanGap, result: A11yCoreResult) => void) | null): this;
+  logger(fn: ((entry: ScanGap | ScanNote, result: A11yCoreResult) => void) | null): this;
   /** Merge arbitrary engineOptions (locale, contrast.mode, policyContract, ...). */
   options(partialEngineOptions: Record<string, unknown>): this;
   /** Register one or more custom rules for just this scan. Call multiple times to accumulate. */
@@ -168,6 +182,10 @@ export class A11yCoreBuilder {
   frames(enabled?: boolean): this;
   /** Opt in to resolving each fail/cantTell occurrence's selector to a live ElementHandle. */
   elementRef(enabled?: boolean): this;
+  /** The rules this scan will run, worked out in Node with no page (@surea11y/core 1.12.0 and later). */
+  plannedChecks(): PlannedCheck[];
+  /** The criteria this scan will report in rulesResults, worked out in Node with no page. */
+  plannedCriteria(): PlannedCriterion[];
 
   /**
    * Runs the scan. Returns { topFrame, frames } instead of a single result
