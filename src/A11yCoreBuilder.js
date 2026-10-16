@@ -82,6 +82,19 @@ const inPageScan = createInPageScan(runa11yCoreInPage);
  * const [firstFail] = results.checksResults.filter(r => r.outcome === 'fail');
  * await firstFail.occurrences[0].elementHandle.screenshot({ path: 'flagged.png' });
  *
+ * Or let the scan take a picture of each element it flags, with
+ * `.screenshots()` (@surea11y/binding-base's, see its README): each
+ * occurrence gets a `screenshot` field, the picture (a Buffer, or a file in
+ * `dir`) or why there is none. The element is scrolled into view and marked
+ * with a box drawn over the page, and the page is put back afterwards; in
+ * every frame with `.frames(true)`, including cross-origin ones:
+ *
+ * const results = await new A11yCoreBuilder({ page })
+ *   .screenshots({ dir: 'a11y-shots', padding: 16 })
+ *   .analyze();
+ * // results.checksResults[i].occurrences[j].screenshot
+ * //   -> { path: 'a11y-shots/element-3f9a1c07.png', box: { x, y, width, height } }
+ *
  * Register your own rule(s) for just this scan with
  * `.withCustomRules([...])` (@surea11y/core's `engineOptions.customRules`
  * escape hatch -- see ../core/docs/ENGINE_OPTIONS.md). Pass a real,
@@ -110,8 +123,8 @@ const inPageScan = createInPageScan(runa11yCoreInPage);
  * top of the first scan's scope rather than replacing it (intentional for
  * "call include() several times for one scan" -- see above -- but a footgun
  * if you hold one instance across multiple assertions).
- * reportOnly()/frames()/elementRef() are the exception: each call replaces
- * the previous value rather than merging with it.
+ * reportOnly()/frames()/elementRef()/screenshots() are the exception: each
+ * call replaces the previous value rather than merging with it.
  */
 class A11yCoreBuilder extends A11yCoreBuilderBase {
   /**
@@ -176,6 +189,9 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
         await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, engineOptions, runOnly)
       );
       this._warnScanGaps(result, '@surea11y/puppeteer');
+      // Right after the frame's scan, before reportOnly(): nothing unless
+      // .screenshots() was called.
+      if (this._screenshots) await this._screenshotFrame(frameOrPage, result);
       return this._elementRef ? this._attachElementRefs(frameOrPage, result) : result;
     };
 
@@ -223,6 +239,45 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
    * Mutates and returns the same result object -- it's a fresh object from
    * this scan, not shared external state.
    */
+  /**
+   * binding-base's screenshots step for one scanned frame (or the page),
+   * with the <iframe>s leading to it: each frame's frameElement(), a handle
+   * in its parent, disposed afterwards.
+   */
+  async _screenshotFrame(frameOrPage, result) {
+    const framePath = [];
+    const parentOf = (f) => (typeof f.parentFrame === 'function' ? f.parentFrame() : null);
+    for (let f = frameOrPage; parentOf(f); f = parentOf(f)) {
+      // null when the frame detached after its scan: binding-base fails
+      // that frame's pictures.
+      const iframe = await f.frameElement().catch(() => null);
+      framePath.unshift({ frame: parentOf(f), iframe });
+    }
+    try {
+      await this._captureScreenshots(result, frameOrPage, framePath);
+    } finally {
+      await Promise.all(framePath.map((step) => (step.iframe ? step.iframe.dispose().catch(() => {}) : null)));
+    }
+  }
+
+  /** For binding-base's screenshots step: runs `fn(...args)` in the frame. */
+  _evaluateInFrame(frameOrPage, fn, args) {
+    return frameOrPage.evaluate(fn, ...args);
+  }
+
+  /**
+   * For binding-base's screenshots step: a PNG of `box`, CSS pixels in the
+   * viewport. Puppeteer's clip is relative to the document, so the box is
+   * moved by the page's scroll; captureBeyondViewport: false keeps Chrome
+   * from laying the page out again for the picture, as the default would.
+   */
+  _captureBox(box, view) {
+    return this._page.screenshot({
+      clip: { x: box.x + view.scroll.x, y: box.y + view.scroll.y, width: box.width, height: box.height },
+      captureBeyondViewport: false
+    });
+  }
+
   async _attachElementRefs(frameOrPage, result) {
     if (!Array.isArray(result.checksResults)) return result;
     for (const check of result.checksResults) {
