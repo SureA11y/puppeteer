@@ -185,8 +185,14 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     const runInFrame = async (frameOrPage, frameContextSelector) => {
       const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
       if (packScript) await frameOrPage.evaluate(packScript);
+      // The text of the style sheets the frame can't read, fetched from Node
+      // (binding-base 1.6.0 and core 1.14.0; nothing with older ones).
+      const frameEngineOptions =
+        typeof this._styleSheetEngineOptions === 'function'
+          ? await this._styleSheetEngineOptions(frameOrPage, engineOptions)
+          : engineOptions;
       const result = rethrowEngineError(
-        await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, engineOptions, runOnly)
+        await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, frameEngineOptions, runOnly)
       );
       this._warnScanGaps(result, '@surea11y/puppeteer');
       // Right after the frame's scan, before reportOnly(): nothing unless
