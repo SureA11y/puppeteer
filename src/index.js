@@ -8,6 +8,6 @@ const { formatFailures } = require('./formatFailures');
 // scanned (forced colors, the internals hook), an occurrence's
 // location as text, and the error analyze() throws for input the engine
 // cannot use.
-const { getScanGaps, getScanNotes, formatOccurrenceLocation, EngineError } = require('@surea11y/binding-base');
+const { getScanGaps, getScanNotes, formatOccurrenceLocation, EngineError, getGatingFailures, SEVERITIES } = require('@surea11y/binding-base');
 
-module.exports = { A11yCoreBuilder, formatFailures, getScanGaps, getScanNotes, formatOccurrenceLocation, EngineError };
+module.exports = { A11yCoreBuilder, formatFailures, getScanGaps, getScanNotes, formatOccurrenceLocation, EngineError, getGatingFailures, SEVERITIES };
