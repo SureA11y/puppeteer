@@ -69,6 +69,8 @@ export type CheckResultMeta = Core.RuleMeta;
 export type CompositeResultDetails = Core.CompositeResult['data']['details'];
 
 export interface Occurrence extends Core.Occurrence {
+  /** With .conditions(): the conditions it was found under, 'default' for the page as it was. */
+  conditions?: string[];
   /**
    * Only present when `.elementRef(true)` was used. `null` when this
    * occurrence has no single resolvable target element (e.g. `selector` was
@@ -90,6 +92,8 @@ export interface CheckResult extends Omit<Core.CheckResult, 'occurrences'> {
 
 /** surea11y's native top-level result shape -- see docs/OUTPUT_SCHEMA.md. */
 export interface A11yCoreResult extends Omit<Core.ScanResult, 'checksResults'> {
+  /** With .conditions(): each scan's condition ('default' first) and environment. */
+  conditionRuns?: Array<{ condition: string; environment: Record<string, unknown> | null }>;
   checksResults: CheckResult[];
 }
 
@@ -227,6 +231,15 @@ export class A11yCoreBuilder {
   reportOnly(outcomes: Core.Outcome | Core.Outcome[]): this;
   /** Opt in to also scanning every sub-frame on the page (including cross-origin iframes). */
   frames(enabled?: boolean): this;
+  /**
+   * Also scan the page under each condition after scanning it as it is
+   * (@surea11y/binding-base 1.6.0): a color scheme, a viewport width, or
+   * both. analyze() returns one merged result: a rule's outcome is its worst
+   * across the scans, each occurrence lists the `conditions` it appeared
+   * under, and `conditionRuns` gives each scan's environment. The viewport
+   * and scheme are put back afterwards. Not combined with frames(true) yet.
+   */
+  conditions(list: ReadonlyArray<ScanCondition> | null): this;
   /** Opt in to resolving each fail/cantTell occurrence's selector to a live ElementHandle. */
   elementRef(enabled?: boolean): this;
   /**
@@ -275,3 +288,10 @@ export function getGatingFailures(
   input: A11yCoreResult | ReadonlyArray<CheckResult>,
   opts?: { failOnSeverity?: Core.Severity }
 ): CheckResult[];
+
+/** A condition to scan the page under with .conditions(). */
+export interface ScanCondition {
+  colorScheme?: 'light' | 'dark';
+  /** The viewport's width in CSS pixels; its height is kept. */
+  width?: number;
+}
