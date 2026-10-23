@@ -266,6 +266,14 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       return this._elementRef ? this._attachElementRefs(frameOrPage, result) : result;
     };
 
+    // .conditions() (binding-base 1.6.0): the page as it is, then under each
+    // condition, merged into one result.
+    if (this._conditions) {
+      return this._applyReportOnly(
+        await this._scanUnderConditions(() => runInFrame(this._page, contextSelector), this._conditionDriver())
+      );
+    }
+
     if (!this._scanFrames) {
       return this._applyReportOnly(await runInFrame(this._page, contextSelector));
     }
@@ -347,6 +355,45 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       clip: { x: box.x + view.scroll.x, y: box.y + view.scroll.y, width: box.width, height: box.height },
       captureBeyondViewport: false
     });
+  }
+
+  /**
+   * The driver steps .conditions() scans need: the viewport's width with
+   * page.setViewport() (the rest of the viewport kept) and the color scheme
+   * with page.emulateMediaFeatures(). Each condition sets both, from the
+   * page as it was, so one condition's width or scheme doesn't carry into
+   * the next; at the end the viewport goes back, and the page is left dark
+   * if it was dark before (a scheme emulated by the caller, or the
+   * system's), or with the scheme no longer emulated.
+   */
+  _conditionDriver() {
+    const page = this._page;
+    let viewport = null;
+    // The scheme a condition without one goes back to.
+    let baseScheme = '';
+    const scheme = (value) => page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value }]);
+    return {
+      save: async () => {
+        const before = await page.evaluate(() => ({
+          width: innerWidth,
+          height: innerHeight,
+          deviceScaleFactor: devicePixelRatio,
+          dark: matchMedia('(prefers-color-scheme: dark)').matches
+        }));
+        viewport = page.viewport() || { width: before.width, height: before.height, deviceScaleFactor: before.deviceScaleFactor };
+        baseScheme = before.dark ? 'dark' : '';
+        return { viewport };
+      },
+      apply: async (condition) => {
+        await page.setViewport({ ...viewport, width: condition.width || viewport.width });
+        await scheme(condition.colorScheme || baseScheme);
+      },
+      restore: async (state) => {
+        if (!state) return;
+        await page.setViewport(state.viewport);
+        await scheme(baseScheme);
+      }
+    };
   }
 
   async _attachElementRefs(frameOrPage, result) {
