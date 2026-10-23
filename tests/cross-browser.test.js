@@ -97,7 +97,7 @@ test('A11yCoreBuilder.installInternalsHook() works in firefox', async () => {
   }
 });
 
-test('A11yCoreBuilder.installListenerHook() works in firefox', async () => {
+test('A11yCoreBuilder.installListenerHook() works in firefox', { skip: typeof require('@surea11y/core').listenerHookScript !== 'function' && 'needs @surea11y/core 1.14.0' }, async () => {
   const browser = await puppeteer.launch({ browser: 'firefox' });
   try {
     const page = await browser.newPage();
