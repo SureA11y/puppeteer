@@ -115,3 +115,32 @@ test('A11yCoreBuilder.installListenerHook() works in firefox', { skip: typeof re
     await browser.close();
   }
 });
+
+// .conditions() in Firefox: a width goes through page.setViewport(), which
+// Puppeteer's WebDriver BiDi page supports; a color scheme needs the DevTools
+// protocol, so it is refused before any scan.
+test('A11yCoreBuilder.conditions() scans a phone width in firefox, and refuses a color scheme there', { skip: typeof require('@surea11y/binding-base').mergeConditionResults !== 'function' && 'needs @surea11y/binding-base 1.6.0' }, async () => {
+  const browser = await puppeteer.launch({ browser: 'firefox' });
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1024, height: 700 });
+    await page.goto('data:text/html,' + encodeURIComponent(
+      '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1><p>Text</p></main></body></html>'
+    ));
+    const results = await new A11yCoreBuilder({ page })
+      .withRules('contrast-minimum')
+      .conditions([{ width: 320 }])
+      .analyze();
+    assert.deepStrictEqual(
+      results.conditionRuns.map((r) => [r.condition, r.environment.viewport.width]),
+      [['default', 1024], ['width 320', 320]]
+    );
+    assert.strictEqual(await page.evaluate(() => innerWidth), 1024);
+    await assert.rejects(
+      new A11yCoreBuilder({ page }).withRules('contrast-minimum').conditions([{ colorScheme: 'dark' }]).analyze(),
+      /a colorScheme needs the DevTools protocol/
+    );
+  } finally {
+    await browser.close();
+  }
+});

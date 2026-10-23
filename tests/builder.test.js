@@ -1612,6 +1612,23 @@ test('A11yCoreBuilder.conditions(): a dark scheme the caller emulated stays dark
   }
 });
 
+test('A11yCoreBuilder.conditions(): a color scheme without the DevTools protocol is refused before any scan, and widths alone never touch the scheme', { skip: NEEDS_CONDITIONS }, async () => {
+  const calls = [];
+  const page = {
+    browser: () => ({ cdpSupported: false }),
+    evaluate: async () => { calls.push('evaluate'); return { width: 1000, height: 700, deviceScaleFactor: 1, dark: false }; },
+    viewport: () => ({ width: 1000, height: 700 }),
+    setViewport: async (v) => { calls.push(`viewport ${v.width}`); },
+    emulateMediaFeatures: async () => { calls.push('scheme'); }
+  };
+  const dark = new A11yCoreBuilder({ page }).conditions([{ colorScheme: 'dark' }]);
+  await assert.rejects(dark._scanUnderConditions(async () => ({ checksResults: [] }), dark._conditionDriver()), /a colorScheme needs the DevTools protocol/);
+  assert.deepStrictEqual(calls, []);
+  const narrow = new A11yCoreBuilder({ page }).conditions([{ width: 320 }]);
+  await narrow._scanUnderConditions(async () => ({ checksResults: [] }), narrow._conditionDriver());
+  assert.deepStrictEqual(calls, ['evaluate', 'viewport 320', 'viewport 1000']);
+});
+
 test('A11yCoreBuilder: without the listener hook, analyze() says once per scan that it would let the engine judge those handlers', { skip: NEEDS_NOTE }, async (t) => {
   const warnings = [];
   t.mock.method(console, 'warn', (msg) => { warnings.push(String(msg)); });

@@ -373,9 +373,20 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // in, named, since clearing the emulation would give the system's, which
     // a caller may have emulated away from.
     let baseScheme = 'light';
+    // The scheme is emulated, and put back, only when a condition sets one:
+    // page.emulateMediaFeatures() needs the DevTools protocol, which Firefox
+    // over WebDriver BiDi doesn't have, where setViewport() works.
+    const usesScheme = this._conditions.some((c) => c.colorScheme);
     const scheme = (value) => page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value }]);
     return {
       save: async () => {
+        const browser = typeof page.browser === 'function' ? page.browser() : null;
+        if (usesScheme && browser && browser.cdpSupported === false) {
+          throw new Error(
+            'A11yCoreBuilder.conditions(): a colorScheme needs the DevTools protocol (Chrome), which this browser does not offer to Puppeteer; ' +
+            'scan the widths alone here, or the color schemes in Chrome.'
+          );
+        }
         const before = await page.evaluate(() => ({
           width: innerWidth,
           height: innerHeight,
@@ -388,12 +399,12 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       },
       apply: async (condition) => {
         await page.setViewport({ ...viewport, width: condition.width || viewport.width });
-        await scheme(condition.colorScheme || baseScheme);
+        if (usesScheme) await scheme(condition.colorScheme || baseScheme);
       },
       restore: async (state) => {
         if (!state) return;
         await page.setViewport(state.viewport);
-        await scheme(baseScheme);
+        if (usesScheme) await scheme(baseScheme);
       }
     };
   }
