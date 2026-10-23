@@ -1,6 +1,6 @@
 'use strict';
 
-const { runa11yCoreInPage, internalsHookScript } = require('@surea11y/core');
+const { runa11yCoreInPage, internalsHookScript, listenerHookScript } = require('@surea11y/core');
 const {
   A11yCoreBuilderBase,
   createInPageScan,
@@ -147,6 +147,25 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       throw new TypeError('A11yCoreBuilder.installInternalsHook() requires a Puppeteer Page (with an .evaluateOnNewDocument() method).');
     }
     return page.evaluateOnNewDocument(internalsHookScript());
+  }
+
+  /**
+   * Installs @surea11y/core's opt-in listener hook (core 1.14.0 and later) in
+   * `page`, so the keyboard rules see the click, key, focus and mouse
+   * listeners a page adds from script (addEventListener, or an
+   * onclick-style property), not only inline handler attributes. Call it
+   * before page.goto(), as installInternalsHook(). Resolves to what
+   * evaluateOnNewDocument() resolves to.
+   * @param {import('puppeteer').Page} page
+   */
+  static installListenerHook(page) {
+    if (!page || typeof page.evaluateOnNewDocument !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installListenerHook() requires a Puppeteer Page (with an .evaluateOnNewDocument() method).');
+    }
+    if (typeof listenerHookScript !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installListenerHook() needs @surea11y/core 1.14.0 or later, which has listenerHookScript().');
+    }
+    return page.evaluateOnNewDocument(listenerHookScript());
   }
 
   constructor({ page, url } = {}) {
