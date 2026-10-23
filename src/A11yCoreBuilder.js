@@ -1,11 +1,18 @@
 'use strict';
 
-const { runa11yCoreInPage, internalsHookScript } = require('@surea11y/core');
+const {
+  runa11yCoreInPage,
+  internalsHookScript,
+  listenerHookScript,
+  liveRegionHookScript,
+  getAnnouncements
+} = require('@surea11y/core');
 const {
   A11yCoreBuilderBase,
   createInPageScan,
   rethrowEngineError,
-  queryOccurrenceElement
+  queryOccurrenceElement,
+  createInPageAnnouncements
 } = require('@surea11y/binding-base');
 
 // core's scan, wrapped so an engine error keeps its `code` across
@@ -149,6 +156,64 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     return page.evaluateOnNewDocument(internalsHookScript());
   }
 
+  /**
+   * Installs @surea11y/core's opt-in listener hook (core 1.14.0 and later) in
+   * `page`, so the keyboard rules see the click, key, focus and mouse
+   * listeners a page adds from script (addEventListener, or an
+   * onclick-style property), not only inline handler attributes. Call it
+   * before page.goto(), as installInternalsHook(). Resolves to what
+   * evaluateOnNewDocument() resolves to.
+   * @param {import('puppeteer').Page} page
+   */
+  static installListenerHook(page) {
+    if (!page || typeof page.evaluateOnNewDocument !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installListenerHook() requires a Puppeteer Page (with an .evaluateOnNewDocument() method).');
+    }
+    if (typeof listenerHookScript !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installListenerHook() needs @surea11y/core 1.14.0 or later, which has listenerHookScript().');
+    }
+    return page.evaluateOnNewDocument(listenerHookScript());
+  }
+
+  /**
+   * Installs @surea11y/core's opt-in live-region hook (core 1.14.0 and
+   * later) in `page`, which records what the page's live regions are given
+   * from the load event on: live-region-announcements then asks about a
+   * region added with its text already in it, or shown and filled at once,
+   * and getAnnouncements() reads what the page made available to announce.
+   * Call it before page.goto(). Resolves to what evaluateOnNewDocument()
+   * resolves to.
+   * @param {import('puppeteer').Page} page
+   */
+  static installLiveRegionHook(page) {
+    if (!page || typeof page.evaluateOnNewDocument !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installLiveRegionHook() requires a Puppeteer Page (with an .evaluateOnNewDocument() method).');
+    }
+    if (typeof liveRegionHookScript !== 'function') {
+      throw new TypeError('A11yCoreBuilder.installLiveRegionHook() needs @surea11y/core 1.14.0 or later, which has liveRegionHookScript().');
+    }
+    return page.evaluateOnNewDocument(liveRegionHookScript());
+  }
+
+  /**
+   * What the page's live regions were given while shown and reachable by
+   * assistive technology, as the live-region hook recorded it:
+   * [{ text, politeness, time }] in the order the page did it, or null when
+   * the page has no hook. What the page made available to announce, not what
+   * a screen reader said. Takes a Page or a Frame.
+   * @param {import('puppeteer').Page | import('puppeteer').Frame} pageOrFrame
+   * @returns {Promise<Array<{ text: string, politeness: 'polite' | 'assertive', time: number }> | null>}
+   */
+  static async getAnnouncements(pageOrFrame) {
+    if (!pageOrFrame || typeof pageOrFrame.evaluate !== 'function') {
+      throw new TypeError('A11yCoreBuilder.getAnnouncements() requires a Puppeteer Page or Frame (with an .evaluate() method).');
+    }
+    if (typeof getAnnouncements !== 'function' || typeof createInPageAnnouncements !== 'function') {
+      throw new TypeError('A11yCoreBuilder.getAnnouncements() needs @surea11y/core 1.14.0 and @surea11y/binding-base 1.6.0 or later.');
+    }
+    return pageOrFrame.evaluate(createInPageAnnouncements(getAnnouncements));
+  }
+
   constructor({ page, url } = {}) {
     super({ url });
     if (!page || typeof page.evaluate !== 'function') {
@@ -200,6 +265,14 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       if (this._screenshots) await this._screenshotFrame(frameOrPage, result);
       return this._elementRef ? this._attachElementRefs(frameOrPage, result) : result;
     };
+
+    // .conditions() (binding-base 1.6.0): the page as it is, then under each
+    // condition, merged into one result.
+    if (this._conditions) {
+      return this._applyReportOnly(
+        await this._scanUnderConditions(() => runInFrame(this._page, contextSelector), this._conditionDriver())
+      );
+    }
 
     if (!this._scanFrames) {
       return this._applyReportOnly(await runInFrame(this._page, contextSelector));
@@ -282,6 +355,56 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
       clip: { x: box.x + view.scroll.x, y: box.y + view.scroll.y, width: box.width, height: box.height },
       captureBeyondViewport: false
     });
+  }
+
+  /**
+   * The driver steps .conditions() scans need: the viewport's width with
+   * page.setViewport() (the rest of the viewport kept) and the color scheme
+   * with page.emulateMediaFeatures(). Each condition sets both, from the
+   * page as it was, so one condition's width or scheme doesn't carry into
+   * the next; at the end the viewport goes back, and the page is left dark
+   * if it was dark before (a scheme emulated by the caller, or the
+   * system's), or with the scheme no longer emulated.
+   */
+  _conditionDriver() {
+    const page = this._page;
+    let viewport = null;
+    // The scheme a condition without one goes back to.
+    let baseScheme = '';
+    // The scheme is emulated, and put back, only when a condition sets one:
+    // page.emulateMediaFeatures() needs the DevTools protocol, which Firefox
+    // over WebDriver BiDi doesn't have, where setViewport() works.
+    const usesScheme = this._conditions.some((c) => c.colorScheme);
+    const scheme = (value) => page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value }]);
+    return {
+      save: async () => {
+        const browser = typeof page.browser === 'function' ? page.browser() : null;
+        if (usesScheme && browser && browser.cdpSupported === false) {
+          throw new Error(
+            'A11yCoreBuilder.conditions(): a colorScheme needs the DevTools protocol (Chrome), which this browser does not offer to Puppeteer; ' +
+            'scan the widths alone here, or the color schemes in Chrome.'
+          );
+        }
+        const before = await page.evaluate(() => ({
+          width: innerWidth,
+          height: innerHeight,
+          deviceScaleFactor: devicePixelRatio,
+          dark: matchMedia('(prefers-color-scheme: dark)').matches
+        }));
+        viewport = page.viewport() || { width: before.width, height: before.height, deviceScaleFactor: before.deviceScaleFactor };
+        baseScheme = before.dark ? 'dark' : '';
+        return { viewport };
+      },
+      apply: async (condition) => {
+        await page.setViewport({ ...viewport, width: condition.width || viewport.width });
+        if (usesScheme) await scheme(condition.colorScheme || baseScheme);
+      },
+      restore: async (state) => {
+        if (!state) return;
+        await page.setViewport(state.viewport);
+        if (usesScheme) await scheme(baseScheme);
+      }
+    };
   }
 
   async _attachElementRefs(frameOrPage, result) {

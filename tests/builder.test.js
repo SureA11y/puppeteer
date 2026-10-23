@@ -1452,3 +1452,195 @@ test('A11yCoreBuilder: plannedChecks() and plannedCriteria() list what analyze()
     await browser.close();
   }
 });
+
+// --- @surea11y/core 1.14 -------------------------------------------------------------
+
+// The listener hook needs @surea11y/core 1.14.0, and its note
+// @surea11y/binding-base 1.6.0; these tests are skipped with older ones.
+const HAS_LISTENER_HOOK = typeof require('@surea11y/core').listenerHookScript === 'function';
+const HAS_LISTENER_NOTE = require('@surea11y/binding-base').getScanNotes({
+  checksResults: [{ outcome: 'cantTell', occurrences: [{ selector: 'div', data: { details: { reasonCode: 'CLICK_HANDLER_NO_KEY_HANDLER' } } }] }]
+}).some((n) => n.kind === 'listener-hook');
+const NEEDS_HOOK = !HAS_LISTENER_HOOK && 'needs @surea11y/core 1.14.0';
+const NEEDS_NOTE = !(HAS_LISTENER_HOOK && HAS_LISTENER_NOTE) && 'needs @surea11y/core 1.14.0 and @surea11y/binding-base 1.6.0';
+
+// A custom button given its click listener from script, with no key listener
+// anywhere: Enter and Space do nothing. Without the listener hook the scan
+// can't see the listener; with it, the button fails.
+const SCRIPTED_BUTTON = 'data:text/html,' + encodeURIComponent(
+  '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>' +
+  '<div id="save" role="button" tabindex="0">Save</div>' +
+  "<script>document.getElementById('save').addEventListener('click', () => {});</script>" +
+  '</main></body></html>'
+);
+
+test('A11yCoreBuilder.installListenerHook(): a button given its click listener from script is unseen without it, and fails with it', { skip: NEEDS_HOOK }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const without = await browser.newPage();
+    await without.goto(SCRIPTED_BUTTON);
+    const before = await new A11yCoreBuilder({ page: without }).withRules('click-handler-keyboard-operable').analyze();
+    assert.strictEqual(outcomeOf(before, 'click-handler-keyboard-operable'), 'notApplicable');
+    assert.strictEqual(before.engine.environment.listenerHook, undefined);
+
+    const page = await browser.newPage();
+    await A11yCoreBuilder.installListenerHook(page);
+    await A11yCoreBuilder.installInternalsHook(page);
+    await page.goto(SCRIPTED_BUTTON);
+    const after = await new A11yCoreBuilder({ page }).withRules('click-handler-keyboard-operable').analyze();
+    assert.strictEqual(after.engine.environment.listenerHook, 'early');
+    assert.strictEqual(after.engine.environment.internalsHook, 'early');
+    const check = after.checksResults.find((r) => r.ruleId === 'click-handler-keyboard-operable');
+    assert.strictEqual(check.outcome, 'fail');
+    assert.strictEqual(check.occurrences[0].data.details.reasonCode, 'CLICK_HANDLER_NO_KEY_LISTENER');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder.installListenerHook() throws a TypeError for anything but a Page', () => {
+  for (const bad of [undefined, null, {}, { evaluate() {} }]) {
+    assert.throws(() => A11yCoreBuilder.installListenerHook(bad), TypeError);
+  }
+});
+
+const HAS_LIVE_REGION_HOOK = typeof require('@surea11y/core').liveRegionHookScript === 'function';
+const HAS_ANNOUNCEMENTS = typeof require('@surea11y/binding-base').createInPageAnnouncements === 'function';
+const NEEDS_LIVE_REGIONS =
+  !(HAS_LIVE_REGION_HOOK && HAS_ANNOUNCEMENTS) && 'needs @surea11y/core 1.14.0 and @surea11y/binding-base 1.6.0';
+const LIVE_REGIONS = 'data:text/html,' + encodeURIComponent(
+  '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>' +
+  '<div id="status" role="status"></div><div id="toasts"></div></main></body></html>'
+);
+
+test('A11yCoreBuilder.installLiveRegionHook(): getAnnouncements() reads what live regions were given, and a region added with its text is asked about', { skip: NEEDS_LIVE_REGIONS }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const without = await browser.newPage();
+    await without.goto(LIVE_REGIONS);
+    assert.strictEqual(await A11yCoreBuilder.getAnnouncements(without), null);
+
+    const page = await browser.newPage();
+    await A11yCoreBuilder.installLiveRegionHook(page);
+    await page.goto(LIVE_REGIONS);
+    await page.evaluate(() => { document.getElementById('status').textContent = 'Saved'; });
+    await page.evaluate(() => {
+      document.getElementById('toasts').innerHTML = '<div role="status">Copied</div>';
+    });
+    const said = await A11yCoreBuilder.getAnnouncements(page);
+    assert.deepStrictEqual(said.map((a) => [a.text, a.politeness]), [['Saved', 'polite']]);
+    assert.strictEqual(typeof said[0].time, 'number');
+
+    const results = await new A11yCoreBuilder({ page }).withRules('live-region-announcements').analyze();
+    assert.strictEqual(results.engine.environment.liveRegionHook, 'early');
+    const check = results.checksResults.find((r) => r.ruleId === 'live-region-announcements');
+    assert.strictEqual(check.outcome, 'cantTell');
+    assert.deepStrictEqual(
+      check.occurrences.map((o) => [o.data.details.reasonCode, o.data.details.text]),
+      [['LIVE_REGION_INSERTED_WITH_CONTENT', 'Copied']]
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder.installLiveRegionHook() and getAnnouncements() throw a TypeError for what they cannot use', async () => {
+  for (const bad of [undefined, null, {}, { evaluate() {} }]) {
+    assert.throws(() => A11yCoreBuilder.installLiveRegionHook(bad), TypeError);
+  }
+  for (const bad of [undefined, null, {}, { evaluateOnNewDocument() {} }]) {
+    await assert.rejects(A11yCoreBuilder.getAnnouncements(bad), TypeError);
+  }
+});
+
+const HAS_CONDITIONS = typeof require('@surea11y/binding-base').mergeConditionResults === 'function';
+const NEEDS_CONDITIONS = !HAS_CONDITIONS && 'needs @surea11y/binding-base 1.6.0';
+// Reads well in the light scheme; in the dark one its text is #444 on #222.
+const DARK_CONTRAST = 'data:text/html,' + encodeURIComponent(
+  '<!doctype html><html lang="en"><head><title>t</title><style>' +
+  'body { color: #111; background: #fff } ' +
+  '@media (prefers-color-scheme: dark) { body { color: #444; background: #222 } }' +
+  '</style></head><body><main><h1>Hi</h1><p id="note">Read me</p></main></body></html>'
+);
+
+test('A11yCoreBuilder.conditions(): a failure only in dark mode fails the merged result, labelled, and the page is put back', { skip: NEEDS_CONDITIONS }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1024, height: 700 });
+    await page.goto(DARK_CONTRAST);
+    const results = await new A11yCoreBuilder({ page })
+      .withRules('contrast-minimum')
+      .conditions([{ colorScheme: 'dark' }, { width: 320 }])
+      .analyze();
+    const check = results.checksResults.find((r) => r.ruleId === 'contrast-minimum');
+    assert.strictEqual(check.outcome, 'fail');
+    assert.ok(check.occurrences.length > 0);
+    for (const o of check.occurrences) assert.deepStrictEqual(o.conditions, ['dark']);
+    assert.deepStrictEqual(
+      results.conditionRuns.map((r) => [r.condition, r.environment.viewport.width, r.environment.colorScheme]),
+      [['default', 1024, 'light'], ['dark', 1024, 'dark'], ['width 320', 320, 'light']]
+    );
+    assert.strictEqual(page.viewport().width, 1024);
+    assert.strictEqual(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches), false);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder.conditions(): a dark scheme the caller emulated stays dark, and a width-only condition scans in it', { skip: NEEDS_CONDITIONS }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1024, height: 700 });
+    await page.goto(DARK_CONTRAST);
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
+    const results = await new A11yCoreBuilder({ page })
+      .withRules('contrast-minimum')
+      .conditions([{ colorScheme: 'light' }, { width: 320 }])
+      .analyze();
+    assert.deepStrictEqual(
+      results.conditionRuns.map((r) => [r.condition, r.environment.colorScheme]),
+      [['default', 'dark'], ['light', 'light'], ['width 320', 'dark']]
+    );
+    assert.strictEqual(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches), true);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder.conditions(): a color scheme without the DevTools protocol is refused before any scan, and widths alone never touch the scheme', { skip: NEEDS_CONDITIONS }, async () => {
+  const calls = [];
+  const page = {
+    browser: () => ({ cdpSupported: false }),
+    evaluate: async () => { calls.push('evaluate'); return { width: 1000, height: 700, deviceScaleFactor: 1, dark: false }; },
+    viewport: () => ({ width: 1000, height: 700 }),
+    setViewport: async (v) => { calls.push(`viewport ${v.width}`); },
+    emulateMediaFeatures: async () => { calls.push('scheme'); }
+  };
+  const dark = new A11yCoreBuilder({ page }).conditions([{ colorScheme: 'dark' }]);
+  await assert.rejects(dark._scanUnderConditions(async () => ({ checksResults: [] }), dark._conditionDriver()), /a colorScheme needs the DevTools protocol/);
+  assert.deepStrictEqual(calls, []);
+  const narrow = new A11yCoreBuilder({ page }).conditions([{ width: 320 }]);
+  await narrow._scanUnderConditions(async () => ({ checksResults: [] }), narrow._conditionDriver());
+  assert.deepStrictEqual(calls, ['evaluate', 'viewport 320', 'viewport 1000']);
+});
+
+test('A11yCoreBuilder: without the listener hook, analyze() says once per scan that it would let the engine judge those handlers', { skip: NEEDS_NOTE }, async (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (msg) => { warnings.push(String(msg)); });
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto('data:text/html,' + encodeURIComponent(
+      '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>' +
+      '<div role="button" tabindex="0" onclick="void save()">Save</div></main></body></html>'
+    ));
+    await new A11yCoreBuilder({ page }).withRules('click-handler-keyboard-operable').analyze();
+    const notes = warnings.filter((w) => /element was asked about because the scan could not see/.test(w));
+    assert.strictEqual(notes.length, 1, JSON.stringify(warnings));
+    assert.match(notes[0], /installListenerHook\(\)/);
+  } finally {
+    await browser.close();
+  }
+});
