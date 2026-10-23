@@ -16,6 +16,7 @@ declare const page: Page;
 
 async function run(): Promise<void> {
   await A11yCoreBuilder.installInternalsHook(page);
+  await A11yCoreBuilder.installListenerHook(page);
   const planned = new A11yCoreBuilder({ page }).withWcag('2.2', 'aa').wcagLevel('aa');
   const plannedIds: string[] = planned.plannedChecks().map((c) => c.ruleId).concat(planned.plannedCriteria().map((r) => r.id));
   void plannedIds;
