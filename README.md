@@ -126,6 +126,20 @@ A batch job that writes `getScanGaps(results)` into its own report can pass `.lo
 
 See `examples/e2e-test-example.test.js` for a fuller, runnable version (`npm run example:e2e`) — one test proving real violations get caught (unlabeled button, missing `alt`), one proving a mistyped `.include()` scope is caught rather than passed, one proving a well-formed page passes cleanly, and one gating a page on a pack's checklist. It uses `node:test` directly rather than a dedicated test-runner package: Puppeteer has no first-party test runner the way `@playwright/test` is the default for Playwright, and `node:test` is a zero-new-dependency choice that already matches this project's own test suite.
 
+### Failing only on serious problems
+
+Every rule result has a severity: `critical`, `serious`, `moderate` or `minor` (a profile can set its own). To start by blocking on serious problems while the rest are still reported, gate on `getGatingFailures(results, { failOnSeverity })` (`@surea11y/binding-base` 1.6.0 and later): the failing rules at that level or above, the same ones `surea11y scan --fail-on-severity` counts for the page. `formatFailures()` takes the same option and still lists the failures below the level, marked as ones that don't fail the test.
+
+```js
+const { A11yCoreBuilder, formatFailures, getGatingFailures } = require('@surea11y/puppeteer');
+
+const results = await new A11yCoreBuilder({ page }).analyze();
+const gate = { failOnSeverity: 'serious' };
+assert.deepStrictEqual(getGatingFailures(results, gate), [], formatFailures(results, gate));
+```
+
+`fail` keeps its meaning, a definite violation; the level only picks which failures stop the test, and every failure stays in `results`. A level that isn't one of the four throws a `TypeError`. `SEVERITIES` lists them, least to most severe.
+
 ### Readable console/CI output on failure
 
 A bare length/equality assertion alone gets you a *working* gate, but the failure message is a raw, deeply-nested object diff — hundreds of lines for a handful of violations. `formatFailures(results)` turns that into a short, scannable block (one entry per occurrence, numbered, with rule ID/severity/location/hint), followed by the result's scan gaps and the `@surea11y/core` release that produced it, that you hand to your assertion library's own failure-message parameter, as above. A real failure then prints:

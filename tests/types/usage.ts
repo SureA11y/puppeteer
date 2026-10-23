@@ -8,7 +8,9 @@ import {
   formatFailures,
   formatOccurrenceLocation,
   getScanGaps,
-  getScanNotes
+  getScanNotes,
+  getGatingFailures,
+  SEVERITIES
 } from '../../src/index';
 import type { A11yCoreResult, A11yCoreMultiFrameResult, Occurrence, ScanGap } from '../../src/index';
 
@@ -95,3 +97,6 @@ async function errors(): Promise<void> {
     if (e instanceof EngineError && e.code === 'INVALID_ENGINE_OPTIONS') String(e.message);
   }
 }
+
+declare const gateResult: Parameters<typeof getGatingFailures>[0];
+const gatingIds: string[] = getGatingFailures(gateResult, { failOnSeverity: SEVERITIES[2] }).map((c) => c.ruleId);
