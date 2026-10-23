@@ -375,7 +375,7 @@ const results = await new A11yCoreBuilder({ page })
   .analyze();
 ```
 
-A condition sets a color scheme (`'light'` or `'dark'`, with `page.emulateMediaFeatures()`), a viewport width in CSS pixels (with `page.setViewport()`, keeping the rest of the viewport), or both. The viewport and color scheme are put back after the last scan, even when one throws.
+A condition sets a color scheme (`'light'` or `'dark'`, with `page.emulateMediaFeatures()`), a viewport width in CSS pixels (with `page.setViewport()`, keeping the rest of the viewport), or both. The viewport and color scheme are put back after the last scan, even when one throws. In Firefox, widths work; a color scheme needs the DevTools protocol, which Puppeteer has only in Chrome, so `.analyze()` rejects before any scan when a condition sets one there.
 
 - A rule's outcome is its worst across the scans, so a contrast failure only in dark mode fails the rule.
 - An occurrence is listed once per element, rule and reason code, with the `conditions` it appeared under (`['default', 'dark']`); `formatFailures()` prints them as `seen in: default, dark`.
