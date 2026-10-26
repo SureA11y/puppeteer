@@ -97,7 +97,7 @@ test('A11yCoreBuilder.installInternalsHook() works in firefox', async () => {
   }
 });
 
-test('A11yCoreBuilder.installListenerHook() works in firefox', { skip: typeof require('@surea11y/core').listenerHookScript !== 'function' && 'needs @surea11y/core 1.14.0' }, async () => {
+test('A11yCoreBuilder.installListenerHook() works in firefox', async () => {
   const browser = await puppeteer.launch({ browser: 'firefox' });
   try {
     const page = await browser.newPage();
@@ -119,7 +119,7 @@ test('A11yCoreBuilder.installListenerHook() works in firefox', { skip: typeof re
 // .conditions() in Firefox: a width goes through page.setViewport(), which
 // Puppeteer's WebDriver BiDi page supports; a color scheme needs the DevTools
 // protocol, so it is refused before any scan.
-test('A11yCoreBuilder.conditions() scans a phone width in firefox, and refuses a color scheme there', { skip: typeof require('@surea11y/binding-base').mergeConditionResults !== 'function' && 'needs @surea11y/binding-base 1.6.0' }, async () => {
+test('A11yCoreBuilder.conditions() scans a phone width in firefox, and refuses a color scheme there', async () => {
   const browser = await puppeteer.launch({ browser: 'firefox' });
   try {
     const page = await browser.newPage();
