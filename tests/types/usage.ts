@@ -20,8 +20,11 @@ async function run(): Promise<void> {
   await A11yCoreBuilder.installInternalsHook(page);
   await A11yCoreBuilder.installListenerHook(page);
   await A11yCoreBuilder.installLiveRegionHook(page);
-  const said = await A11yCoreBuilder.getAnnouncements(page);
-  const texts: string[] = (said || []).map((a) => `${a.politeness}: ${a.text}`);
+  const said = await A11yCoreBuilder.announcements(page, { includeBehindModal: true });
+  const regions: Array<string | null> = (said ?? []).map((a) => a.selector);
+  void regions;
+  const review: string = formatFailures({ checksResults: [] }, { outcomes: ['fail', 'leanFail'], howToCheck: true });
+  void review;
   const planned = new A11yCoreBuilder({ page }).withWcag('2.2', 'aa').wcagLevel('aa');
   const plannedIds: string[] = planned.plannedChecks().map((c) => c.ruleId).concat(planned.plannedCriteria().map((r) => r.id));
   void plannedIds;
@@ -57,6 +60,7 @@ async function run(): Promise<void> {
   const gaps: ScanGap[] = getScanGaps(result);
   for (const note of getScanNotes(result)) {
     if (note.kind === 'internals-hook') note.elementCount.toFixed();
+    else if (note.kind === 'listener-hook' || note.kind === 'live-region-hook') note.rules.concat(String(note.findingCount));
     else note.message.toUpperCase();
   }
   for (const gap of gaps) {
@@ -100,6 +104,15 @@ async function errors(): Promise<void> {
 
 declare const gateResult: Parameters<typeof getGatingFailures>[0];
 const gatingIds: string[] = getGatingFailures(gateResult, { failOnSeverity: SEVERITIES[2] }).map((c) => c.ruleId);
+const gated: string = formatFailures({ checksResults: [] }, { failOnSeverity: 'serious', howToCheck: true });
+
+async function underConditions(): Promise<void> {
+  const merged = await new A11yCoreBuilder({ page })
+    .conditions([{ colorScheme: 'dark' }, { width: 320 }])
+    .fetchStyleSheets(false)
+    .analyze();
+  void merged;
+}
 
 declare const conditionResult: A11yCoreResult;
 const seenIn: string[] = (conditionResult.checksResults[0].occurrences[0].conditions || []).concat((conditionResult.conditionRuns || []).map((r) => r.condition));
