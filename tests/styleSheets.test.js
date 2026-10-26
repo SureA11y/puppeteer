@@ -4,8 +4,7 @@
 // fetches it from Node and core reads it, so css-orientation-lock finds the
 // lock in it instead of asking. Two local servers on two ports are two
 // origins; the sheet's server sends no CORS header, so the page itself can't
-// fetch it either. Needs @surea11y/binding-base 1.6.0 and @surea11y/core
-// 1.14.0; skipped with older ones.
+// fetch it either.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -22,11 +21,7 @@ function serve(handler) {
   });
 }
 
-const supported =
-  typeof A11yCoreBuilder.prototype._styleSheetEngineOptions === 'function' &&
-  typeof require('@surea11y/core').preloadStyleSheets === 'function';
-
-test('a style sheet from another origin is fetched and read', { skip: !supported && 'needs binding-base 1.6.0 and core 1.14.0' }, async (t) => {
+test('a style sheet from another origin is fetched and read', async (t) => {
   const cdn = await serve((req, res) => {
     res.writeHead(200, { 'content-type': 'text/css' });
     res.end(LOCK);
