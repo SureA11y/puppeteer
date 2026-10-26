@@ -1453,46 +1453,53 @@ test('A11yCoreBuilder: plannedChecks() and plannedCriteria() list what analyze()
   }
 });
 
-// --- @surea11y/core 1.14 -------------------------------------------------------------
+// --- @surea11y/core 1.14: steps for questions, the listener and live-region hooks
 
-// The listener hook needs @surea11y/core 1.14.0, and its note
-// @surea11y/binding-base 1.6.0; these tests are skipped with older ones.
-const HAS_LISTENER_HOOK = typeof require('@surea11y/core').listenerHookScript === 'function';
-const HAS_LISTENER_NOTE = require('@surea11y/binding-base').getScanNotes({
-  checksResults: [{ outcome: 'cantTell', occurrences: [{ selector: 'div', data: { details: { reasonCode: 'CLICK_HANDLER_NO_KEY_HANDLER' } } }] }]
-}).some((n) => n.kind === 'listener-hook');
-const NEEDS_HOOK = !HAS_LISTENER_HOOK && 'needs @surea11y/core 1.14.0';
-const NEEDS_NOTE = !(HAS_LISTENER_HOOK && HAS_LISTENER_NOTE) && 'needs @surea11y/core 1.14.0 and @surea11y/binding-base 1.6.0';
+function htmlPage(body, head = '') {
+  return 'data:text/html,' + encodeURIComponent(
+    `<!doctype html><html lang="en"><head><title>t</title>${head}</head><body><main><h1>Hi</h1>${body}</main></body></html>`
+  );
+}
 
-// A custom button given its click listener from script, with no key listener
-// anywhere: Enter and Space do nothing. Without the listener hook the scan
-// can't see the listener; with it, the button fails.
-const SCRIPTED_BUTTON = 'data:text/html,' + encodeURIComponent(
-  '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>' +
-  '<div id="save" role="button" tabindex="0">Save</div>' +
-  "<script>document.getElementById('save').addEventListener('click', () => {});</script>" +
-  '</main></body></html>'
-);
+test('A11yCoreBuilder: a question in the result says how to answer it, and formatFailures() lists it after the failures', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(htmlPage('<h3>Skipped</h3><img src="a.png">'));
+    const results = await new A11yCoreBuilder({ page }).withRules(['heading-order', 'img-alt-present']).analyze();
+    const [question] = results.checksResults.find((r) => r.ruleId === 'heading-order').occurrences;
+    assert.strictEqual(question.lean.toward, 'fail');
+    assert.ok(question.howToCheck.steps.length, 'the steps the in-page engine leaves out are added');
+    const text = formatFailures(results, { howToCheck: true });
+    assert.match(text, /^1\) img-alt-present \(serious\): /);
+    assert.match(text, /\n2\) heading-order \(minor, likely fails\): /);
+    assert.match(text, /\n {3}How to check:\n {5}1\. /);
+  } finally {
+    await browser.close();
+  }
+});
 
-test('A11yCoreBuilder.installListenerHook(): a button given its click listener from script is unseen without it, and fails with it', { skip: NEEDS_HOOK }, async () => {
+const SCRIPTED_BUTTON =
+  '<div role="button" tabindex="0" class="save">Save</div>' +
+  '<script>document.querySelector(".save").addEventListener("click", () => {});</script>';
+
+test('A11yCoreBuilder.installListenerHook(): a button given its click listener from script is judged with it, and not without', async () => {
   const browser = await puppeteer.launch();
   try {
     const without = await browser.newPage();
-    await without.goto(SCRIPTED_BUTTON);
+    await without.goto(htmlPage(SCRIPTED_BUTTON));
     const before = await new A11yCoreBuilder({ page: without }).withRules('click-handler-keyboard-operable').analyze();
-    assert.strictEqual(outcomeOf(before, 'click-handler-keyboard-operable'), 'notApplicable');
     assert.strictEqual(before.engine.environment.listenerHook, undefined);
+    assert.notStrictEqual(outcomeOf(before, 'click-handler-keyboard-operable'), 'fail', 'without the hook the listener is not seen');
 
     const page = await browser.newPage();
     await A11yCoreBuilder.installListenerHook(page);
-    await A11yCoreBuilder.installInternalsHook(page);
-    await page.goto(SCRIPTED_BUTTON);
+    await page.goto(htmlPage(SCRIPTED_BUTTON));
     const after = await new A11yCoreBuilder({ page }).withRules('click-handler-keyboard-operable').analyze();
     assert.strictEqual(after.engine.environment.listenerHook, 'early');
-    assert.strictEqual(after.engine.environment.internalsHook, 'early');
-    const check = after.checksResults.find((r) => r.ruleId === 'click-handler-keyboard-operable');
-    assert.strictEqual(check.outcome, 'fail');
-    assert.strictEqual(check.occurrences[0].data.details.reasonCode, 'CLICK_HANDLER_NO_KEY_LISTENER');
+    assert.strictEqual(outcomeOf(after, 'click-handler-keyboard-operable'), 'fail');
+    const [found] = after.checksResults[0].occurrences;
+    assert.strictEqual(found.data.details.reasonCode, 'CLICK_HANDLER_NO_KEY_LISTENER');
   } finally {
     await browser.close();
   }
@@ -1504,33 +1511,25 @@ test('A11yCoreBuilder.installListenerHook() throws a TypeError for anything but 
   }
 });
 
-const HAS_LIVE_REGION_HOOK = typeof require('@surea11y/core').liveRegionHookScript === 'function';
-const HAS_ANNOUNCEMENTS = typeof require('@surea11y/binding-base').createInPageAnnouncements === 'function';
-const NEEDS_LIVE_REGIONS =
-  !(HAS_LIVE_REGION_HOOK && HAS_ANNOUNCEMENTS) && 'needs @surea11y/core 1.14.0 and @surea11y/binding-base 1.6.0';
-const LIVE_REGIONS = 'data:text/html,' + encodeURIComponent(
-  '<!doctype html><html lang="en"><head><title>t</title></head><body><main><h1>Hi</h1>' +
-  '<div id="status" role="status"></div><div id="toasts"></div></main></body></html>'
-);
-
-test('A11yCoreBuilder.installLiveRegionHook(): getAnnouncements() reads what live regions were given, and a region added with its text is asked about', { skip: NEEDS_LIVE_REGIONS }, async () => {
+test('A11yCoreBuilder.announcements(): what the live regions were given, each with its region, and null without the hook', async () => {
   const browser = await puppeteer.launch();
   try {
     const without = await browser.newPage();
-    await without.goto(LIVE_REGIONS);
-    assert.strictEqual(await A11yCoreBuilder.getAnnouncements(without), null);
+    await without.goto(htmlPage('<div id="status" aria-live="polite"></div>'));
+    assert.strictEqual(await A11yCoreBuilder.announcements(without), null);
 
     const page = await browser.newPage();
     await A11yCoreBuilder.installLiveRegionHook(page);
-    await page.goto(LIVE_REGIONS);
+    await page.goto(htmlPage('<div id="status" aria-live="polite"></div><div id="toasts"></div>'));
     await page.evaluate(() => { document.getElementById('status').textContent = 'Saved'; });
     await page.evaluate(() => {
       document.getElementById('toasts').innerHTML = '<div role="status">Copied</div>';
     });
-    const said = await A11yCoreBuilder.getAnnouncements(page);
-    assert.deepStrictEqual(said.map((a) => [a.text, a.politeness]), [['Saved', 'polite']]);
+    const said = await A11yCoreBuilder.announcements(page);
+    assert.deepStrictEqual(said.map((a) => [a.text, a.politeness, a.selector]), [['Saved', 'polite', '#status']]);
     assert.strictEqual(typeof said[0].time, 'number');
 
+    // A region added with its text already in it is asked about.
     const results = await new A11yCoreBuilder({ page }).withRules('live-region-announcements').analyze();
     assert.strictEqual(results.engine.environment.liveRegionHook, 'early');
     const check = results.checksResults.find((r) => r.ruleId === 'live-region-announcements');
@@ -1544,17 +1543,12 @@ test('A11yCoreBuilder.installLiveRegionHook(): getAnnouncements() reads what liv
   }
 });
 
-test('A11yCoreBuilder.installLiveRegionHook() and getAnnouncements() throw a TypeError for what they cannot use', async () => {
+test('A11yCoreBuilder.installLiveRegionHook() throws a TypeError for anything but a Page', () => {
   for (const bad of [undefined, null, {}, { evaluate() {} }]) {
     assert.throws(() => A11yCoreBuilder.installLiveRegionHook(bad), TypeError);
   }
-  for (const bad of [undefined, null, {}, { evaluateOnNewDocument() {} }]) {
-    await assert.rejects(A11yCoreBuilder.getAnnouncements(bad), TypeError);
-  }
 });
 
-const HAS_CONDITIONS = typeof require('@surea11y/binding-base').mergeConditionResults === 'function';
-const NEEDS_CONDITIONS = !HAS_CONDITIONS && 'needs @surea11y/binding-base 1.6.0';
 // Reads well in the light scheme; in the dark one its text is #444 on #222.
 const DARK_CONTRAST = 'data:text/html,' + encodeURIComponent(
   '<!doctype html><html lang="en"><head><title>t</title><style>' +
@@ -1563,7 +1557,7 @@ const DARK_CONTRAST = 'data:text/html,' + encodeURIComponent(
   '</style></head><body><main><h1>Hi</h1><p id="note">Read me</p></main></body></html>'
 );
 
-test('A11yCoreBuilder.conditions(): a failure only in dark mode fails the merged result, labelled, and the page is put back', { skip: NEEDS_CONDITIONS }, async () => {
+test('A11yCoreBuilder.conditions(): a failure only in dark mode fails the merged result, labelled, and the page is put back', async () => {
   const browser = await puppeteer.launch();
   try {
     const page = await browser.newPage();
@@ -1591,7 +1585,7 @@ test('A11yCoreBuilder.conditions(): a failure only in dark mode fails the merged
   }
 });
 
-test('A11yCoreBuilder.conditions(): a dark scheme the caller emulated stays dark, and a width-only condition scans in it', { skip: NEEDS_CONDITIONS }, async () => {
+test('A11yCoreBuilder.conditions(): a dark scheme the caller emulated stays dark, and a width-only condition scans in it', async () => {
   const browser = await puppeteer.launch();
   try {
     const page = await browser.newPage();
@@ -1612,7 +1606,7 @@ test('A11yCoreBuilder.conditions(): a dark scheme the caller emulated stays dark
   }
 });
 
-test('A11yCoreBuilder.conditions(): a color scheme without the DevTools protocol is refused before any scan, and widths alone never touch the scheme', { skip: NEEDS_CONDITIONS }, async () => {
+test('A11yCoreBuilder.conditions(): a color scheme without the DevTools protocol is refused before any scan, and widths alone never touch the scheme', async () => {
   const calls = [];
   const page = {
     browser: () => ({ cdpSupported: false }),
@@ -1629,7 +1623,7 @@ test('A11yCoreBuilder.conditions(): a color scheme without the DevTools protocol
   assert.deepStrictEqual(calls, ['evaluate', 'viewport 320', 'viewport 1000']);
 });
 
-test('A11yCoreBuilder: without the listener hook, analyze() says once per scan that it would let the engine judge those handlers', { skip: NEEDS_NOTE }, async (t) => {
+test('A11yCoreBuilder: without the listener hook, analyze() says once per scan which findings it would have decided', async (t) => {
   const warnings = [];
   t.mock.method(console, 'warn', (msg) => { warnings.push(String(msg)); });
   const browser = await puppeteer.launch();
@@ -1640,10 +1634,22 @@ test('A11yCoreBuilder: without the listener hook, analyze() says once per scan t
       '<div role="button" tabindex="0" onclick="void save()">Save</div></main></body></html>'
     ));
     await new A11yCoreBuilder({ page }).withRules('click-handler-keyboard-operable').analyze();
-    const notes = warnings.filter((w) => /element was asked about because the scan could not see/.test(w));
+    const notes = warnings.filter((w) => /was judged without seeing the listeners the page adds from script/.test(w));
     assert.strictEqual(notes.length, 1, JSON.stringify(warnings));
     assert.match(notes[0], /installListenerHook\(\)/);
   } finally {
     await browser.close();
   }
+});
+
+test('A11yCoreBuilder: the hook installers want a Puppeteer page', () => {
+  for (const method of ['installListenerHook', 'installLiveRegionHook']) {
+    assert.throws(() => A11yCoreBuilder[method]({}), (e) => e instanceof TypeError && e.message.includes(method));
+  }
+  const scripts = [];
+  const fakePage = { evaluateOnNewDocument: (s) => { scripts.push(s); return 'registered'; } };
+  assert.strictEqual(A11yCoreBuilder.installListenerHook(fakePage), 'registered');
+  assert.strictEqual(A11yCoreBuilder.installLiveRegionHook(fakePage), 'registered');
+  const core = require('@surea11y/core');
+  assert.deepStrictEqual(scripts, [core.listenerHookScript(), core.liveRegionHookScript()]);
 });

@@ -49,9 +49,12 @@ export type {
   ScreenshotOptions,
   ScreenshotSkip,
   ScreenshotBox,
-  OccurrenceScreenshot
+  OccurrenceScreenshot,
+  LocatedAnnouncement,
+  ReviewGroup
 } from '@surea11y/binding-base';
 import type {
+  LocatedAnnouncement,
   PackLike,
   WcagVersion,
   WcagLevelInput,
@@ -149,29 +152,26 @@ export class A11yCoreBuilder {
   static installInternalsHook(page: Page): ReturnType<Page['evaluateOnNewDocument']>;
 
   /**
-   * Installs @surea11y/core's opt-in listener hook (core 1.14.0 and later) in
-   * `page`, so the keyboard rules see the listeners a page adds from script.
-   * Call it before page.goto(), as installInternalsHook().
+   * Installs @surea11y/core's opt-in listener hook in `page`, so the keyboard
+   * rules see the event listeners the page adds from script. Call it before
+   * page.goto(). Needs @surea11y/core 1.14.0 or later.
    */
   static installListenerHook(page: Page): ReturnType<Page['evaluateOnNewDocument']>;
 
   /**
-   * Installs @surea11y/core's opt-in live-region hook (core 1.14.0 and
-   * later): live-region-announcements then also asks about a live region
-   * added with its text already in it, or shown and filled at once, and
-   * getAnnouncements() reads what the page made available to announce. Call
-   * it before page.goto().
+   * Installs @surea11y/core's opt-in live-region hook in `page`, which
+   * records what its live regions are given. Call it before page.goto().
+   * Needs @surea11y/core 1.14.0 or later.
    */
   static installLiveRegionHook(page: Page): ReturnType<Page['evaluateOnNewDocument']>;
 
   /**
-   * What the page's live regions were given while shown and reachable, as
-   * the live-region hook recorded it, in order; null without the hook. Not
-   * what a screen reader said. Needs core 1.14.0 and binding-base 1.6.0.
+   * What `page`'s live regions were given since it loaded, in order, each
+   * region named by its selector; null without the live-region hook. Texts
+   * given to a region behind an open modal dialog only with
+   * `includeBehindModal: true`.
    */
-  static getAnnouncements(
-    pageOrFrame: Page | Frame
-  ): Promise<Array<{ text: string; politeness: 'polite' | 'assertive'; time: number }> | null>;
+  static announcements(page: Page, options?: { includeBehindModal?: boolean }): Promise<LocatedAnnouncement[] | null>;
 
   /** Scope the scan to one region. Call multiple times for a multi-region union. */
   include(selector: string): this;
