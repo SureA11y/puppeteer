@@ -682,6 +682,41 @@ test('A11yCoreBuilder: frames(true) scans a sub-frame and keeps its findings sep
   }
 });
 
+test('A11yCoreBuilder: frames(true) scans many sub-frames a few at a time and keeps each result in its frame\'s place', async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    // Every third frame holds an image without a text alternative, so a
+    // result out of place shows as a failure on the wrong frame.
+    const frame = (i) => `<iframe title="f${i}" srcdoc="${i % 3 ? '%3Cp%3Ef' + i + '%3C/p%3E' : '%3Cimg src=x.png%3E'}"></iframe>`;
+    await page.goto('data:text/html,<html><body>' + Array.from({ length: 12 }, (_, i) => frame(i)).join('') + '</body></html>');
+    await page.waitForNetworkIdle().catch(() => {});
+
+    const realEvaluate = page.frames()[1].constructor.prototype.evaluate;
+    let running = 0;
+    let most = 0;
+    for (const f of page.frames().slice(1)) {
+      f.evaluate = async function (...args) {
+        running += 1;
+        most = Math.max(most, running);
+        try { return await realEvaluate.apply(this, args); } finally { running -= 1; }
+      };
+    }
+
+    const results = await new A11yCoreBuilder({ page }).frames(true).analyze();
+
+    assert.strictEqual(results.frames.length, 12);
+    results.frames.forEach((r, i) => {
+      const img = r.checksResults.find((c) => c.ruleId === 'img-alt-present');
+      assert.strictEqual(img.outcome, i % 3 ? 'notApplicable' : 'fail', `frame ${i}`);
+    });
+    assert.ok(most > 1, 'frames are scanned more than one at a time');
+    assert.ok(most <= 4, `at most 4 frames at once, not ${most}`);
+  } finally {
+    await browser.close();
+  }
+});
+
 test('A11yCoreBuilder: reportOnly() filters checksResults down to the given outcomes', async () => {
   const browser = await puppeteer.launch();
   try {

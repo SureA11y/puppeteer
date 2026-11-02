@@ -15,6 +15,24 @@ const {
 // self-contained, so Puppeteer serializes it as it did runa11yCoreInPage.
 const inPageScan = createInPageScan(runa11yCoreInPage);
 
+// How many sub-frames a .frames(true) scan runs at once.
+const FRAME_CONCURRENCY = 4;
+
+/** Maps `items` through async `fn`, at most `limit` at a time, keeping their order. */
+async function mapInBatches(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next;
+      next += 1;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 /**
  * Puppeteer binding for surea11y -- scans a real, already-rendered page.
  *
@@ -269,25 +287,29 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // it's already covered by topFrame above, so callers don't have to
     // de-duplicate it themselves out of the frames array.
     const subFrames = this._page.frames().filter((f) => f !== mainFrame);
-    const frames = [];
-    for (const frame of subFrames) {
+    // include() scopes the top frame only: each sub-frame is scanned whole,
+    // as core's own runa11yCoreAcrossFrames does. The selectors were written
+    // against the top document, and since core 1.10.0 a selector that
+    // matches nothing scans nothing, so passing them on would leave most
+    // frames unscanned.
+    const scanFrame = async (frame) => {
       try {
-        // include() scopes the top frame only: each sub-frame is scanned
-        // whole, as core's own runa11yCoreAcrossFrames does. The selectors
-        // were written against the top document, and since core 1.10.0 a
-        // selector that matches nothing scans nothing, so passing them on
-        // would leave most frames unscanned.
-        frames.push(this._applyReportOnly(await runInFrame(frame, null)));
+        return this._applyReportOnly(await runInFrame(frame, null));
       } catch (e) {
         // A frame can detach/navigate away mid-scan, or be a sandboxed
         // frame the browser blocks scripting in -- don't let one bad frame
         // abort the whole multi-frame scan; report it and keep going.
-        frames.push({
+        return {
           url: (typeof frame.url === 'function' ? frame.url() : null),
           error: (e && e.message) || String(e)
-        });
+        };
       }
-    }
+    };
+    // Frames are scanned a few at a time, each result in the frame's place
+    // in page.frames(): a page of 50 small frames took 18 s one by one.
+    // Element pictures scroll the page, so with .screenshots() they go one
+    // at a time, as before.
+    const frames = await mapInBatches(subFrames, this._screenshots ? 1 : FRAME_CONCURRENCY, scanFrame);
 
     return { topFrame, frames };
   }
