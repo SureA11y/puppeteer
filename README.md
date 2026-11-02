@@ -109,7 +109,7 @@ assert.ok(
 );
 ```
 
-`getScanGaps(results)` lists what the scan left out, which `checksResults` alone would pass over as clean: an `.include()` scope that matched nothing (`kind: 'context-not-found'`; nothing was scanned, so every rule reports `notApplicable`), some of several `.include()` selectors that matched nothing (`'context-partly-not-found'`), each custom rule the engine did not run (`'custom-rule-skipped'`, with the engine's reason; a custom rule you excluded yourself with `.disableRules()` is not a gap), and each pack the page did not run (`'pack-skipped'`, from `results.skippedPacks`; see [Scanning with packs](#scanning-with-packs-standards-checklists-and-your-own-rules)). Each gap has a `message`. Checking it is what keeps a mistyped scope from passing the gate. `analyze()` also prints each gap's message with `console.warn` (as `@surea11y/puppeteer (<frame url>): <message>`, once per scanned frame under `.frames(true)`), so a scan that left something out shows in the log even where nothing asserts on it.
+`getScanGaps(results)` lists what the scan left out, which `checksResults` alone would pass over as clean: an `.include()` scope that matched nothing (`kind: 'context-not-found'`; nothing was scanned, so every rule reports `notApplicable`), some of several `.include()` selectors that matched nothing (`'context-partly-not-found'`), each custom rule the engine did not run (`'custom-rule-skipped'`, with the engine's reason; a custom rule you excluded yourself with `.disableRules()` is not a gap), each pack the page did not run (`'pack-skipped'`, from `results.skippedPacks`; see [Scanning with packs](#scanning-with-packs-standards-checklists-and-your-own-rules)), and each profile a scan of several did not run (`'profile-not-run'`, from `results.engine.profilesNotRun`, `@surea11y/core` 1.15 and later; see [Scanning with packs](#scanning-with-packs-standards-checklists-and-your-own-rules)). Each gap has a `message`. Checking it is what keeps a mistyped scope from passing the gate. `analyze()` also prints each gap's message with `console.warn` (as `@surea11y/puppeteer (<frame url>): <message>`, once per scanned frame under `.frames(true)`), so a scan that left something out shows in the log even where nothing asserts on it.
 
 That warning is the right default for a test run. A project that already handles gaps itself can take them over with `.logger(fn)`: `fn(gap, result)` is called once per gap, with the gap as `getScanGaps()` gives it and the result of the frame it came from, instead of `console.warn`. A scanning service that shows gaps to its users, say, can send them once to its own structured log, rather than also printing a loose line on the server's console for every scan:
 
@@ -503,6 +503,8 @@ results.rulesResults.filter((r) => r.meta && r.meta.standard === 'Acme web polic
 **Several profiles at once.** `.options({ profile })` also takes a list, a pack's profile beside WCAG's or another pack's (`@surea11y/core` 1.15 and later). Each profile judges the page as it would alone, and the result reads as one profile with the rules of all, in the top frame and in each frame with `.frames(true)`:
 
 ```js
+const waiAria = require('@surea11y/pack-wai-aria');
+
 const results = await new A11yCoreBuilder({ page })
   .withPacks(waiAria)
   .options({ profile: ['wcag22-aa', 'wai-aria-1.2'] })
