@@ -15,6 +15,12 @@ const {
   frameReadingOptions
 } = bindingBase;
 const frameEngineOptions = bindingBase.frameEngineOptions || ((engineOptions) => engineOptions);
+// What a frame is under, with what the frames around it are under
+// (binding-base 1.8 and later; aria-hidden and inert alike).
+const inheritFrameReading = bindingBase.inheritFrameReading || ((above, reading) => ({
+  ariaHidden: !!((above && above.ariaHidden) || (reading && reading.ariaHidden)),
+  inert: !!((above && above.inert) || (reading && reading.inert))
+}));
 
 // core's scan, wrapped so an engine error keeps its `code` across
 // page.evaluate(), which keeps only an error's message. Built once; it is
@@ -357,7 +363,7 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     } catch (e) {
       own = {};
     }
-    return own.skipped ? own : { ariaHidden: !!(above.ariaHidden || own.ariaHidden) };
+    return own.skipped ? own : inheritFrameReading(above, own);
   }
 
   /**
