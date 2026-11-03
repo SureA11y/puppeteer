@@ -263,7 +263,7 @@ export class A11yCoreBuilder {
   /**
    * Runs the scan. Returns { topFrame, frames } instead of a single result
    * when .frames(true) was used; include() then scopes the top frame only,
-   * and each sub-frame is scanned whole. Rejects with an EngineError for
+   * and each sub-frame inside its roots is scanned whole. Rejects with an EngineError for
    * input the engine cannot use, with its `code`: 'INVALID_RUN_ONLY'
    * (withRules()/withTags() named no rule or tag it knows),
    * 'INVALID_CONTEXT_SELECTOR' (an include() selector the browser can't
