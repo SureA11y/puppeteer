@@ -1,7 +1,7 @@
 // Compiled, not run, by tests/types.test.js.
-import type { Page } from 'puppeteer';
-import type { ScanResult } from '@surea11y/core';
-import { definePack } from '@surea11y/core/pack';
+import type { Page } from "puppeteer";
+import type { ScanResult } from "@surea11y/core";
+import { definePack } from "@surea11y/core/pack";
 import {
   A11yCoreBuilder,
   EngineError,
@@ -10,9 +10,14 @@ import {
   getScanGaps,
   getScanNotes,
   getGatingFailures,
-  SEVERITIES
-} from '../../src/index';
-import type { A11yCoreResult, A11yCoreMultiFrameResult, Occurrence, ScanGap } from '../../src/index';
+  SEVERITIES,
+} from "../../src/index";
+import type {
+  A11yCoreResult,
+  A11yCoreMultiFrameResult,
+  Occurrence,
+  ScanGap,
+} from "../../src/index";
 
 declare const page: Page;
 
@@ -20,33 +25,58 @@ async function run(): Promise<void> {
   await A11yCoreBuilder.installInternalsHook(page);
   await A11yCoreBuilder.installListenerHook(page);
   await A11yCoreBuilder.installLiveRegionHook(page);
-  const said = await A11yCoreBuilder.announcements(page, { includeBehindModal: true });
+  const said = await A11yCoreBuilder.announcements(page, {
+    includeBehindModal: true,
+  });
   const regions: Array<string | null> = (said ?? []).map((a) => a.selector);
   void regions;
-  const review: string = formatFailures({ checksResults: [] }, { outcomes: ['fail', 'leanFail'], howToCheck: true });
+  const review: string = formatFailures(
+    { checksResults: [] },
+    { outcomes: ["fail", "leanFail"], howToCheck: true },
+  );
   void review;
-  const planned = new A11yCoreBuilder({ page }).withWcag('2.2', 'aa').wcagLevel('aa');
-  const plannedIds: string[] = planned.plannedChecks().map((c) => c.ruleId).concat(planned.plannedCriteria().map((r) => r.id));
+  const planned = new A11yCoreBuilder({ page })
+    .withWcag("2.2", "aa")
+    .wcagLevel("aa");
+  const plannedIds: string[] = planned
+    .plannedChecks()
+    .map((c) => c.ruleId)
+    .concat(planned.plannedCriteria().map((r) => r.id));
   void plannedIds;
 
   const results = await new A11yCoreBuilder({ page })
-    .include('main')
-    .withWcag('2.2', 'AA')
+    .include("main")
+    .withWcag("2.2", "AA")
     .withBestPractices()
-    .includeMode('or')
-    .wcagLevel('AA')
-    .logger((entry, frame) => { void `${frame.url}: ${entry.kind} ${entry.message}`; })
-    .withRules(['img-alt-present'])
-    .withPacks(definePack({ name: '@acme/a11y-rules', version: '1.0.0', namespace: 'acme', core: '^1.11.1' }))
-    .reportOnly(['fail', 'cantTell'])
+    .includeMode("or")
+    .wcagLevel("AA")
+    .logger((entry, frame) => {
+      void `${frame.url}: ${entry.kind} ${entry.message}`;
+    })
+    .withRules(["img-alt-present"])
+    .withPacks(
+      definePack({
+        name: "@acme/a11y-rules",
+        version: "1.0.0",
+        namespace: "acme",
+        core: "^1.11.1",
+      }),
+    )
+    .reportOnly(["fail", "cantTell"])
     .elementRef(true)
-    .screenshots({ dir: 'a11y-shots', outcomes: ['fail', 'cantTell'], padding: 8, highlight: true, max: 20 })
+    .screenshots({
+      dir: "a11y-shots",
+      outcomes: ["fail", "cantTell"],
+      padding: 8,
+      highlight: true,
+      max: 20,
+    })
     .analyze();
 
-  if ('topFrame' in results) {
+  if ("topFrame" in results) {
     const tree: A11yCoreMultiFrameResult = results;
     for (const frame of tree.frames) {
-      if ('error' in frame) String(frame.error);
+      if ("error" in frame) String(frame.error);
       else formatFailures(frame);
     }
     return;
@@ -56,23 +86,29 @@ async function run(): Promise<void> {
   const version: string = result.engine.version;
   const layout: boolean = result.engine.environment.layout;
   const matched: number | undefined = result.contextMatch?.elementCount;
-  const skipped: Array<string | null> = result.skippedCustomRules.map((r) => r.id);
+  const skipped: Array<string | null> = result.skippedCustomRules.map(
+    (r) => r.id,
+  );
   const gaps: ScanGap[] = getScanGaps(result);
   for (const note of getScanNotes(result)) {
-    if (note.kind === 'internals-hook') note.elementCount.toFixed();
-    else if (note.kind === 'listener-hook' || note.kind === 'live-region-hook') note.rules.concat(String(note.findingCount));
+    if (note.kind === "internals-hook") note.elementCount.toFixed();
+    else if (note.kind === "listener-hook" || note.kind === "live-region-hook")
+      note.rules.concat(String(note.findingCount));
     else note.message.toUpperCase();
   }
   for (const gap of gaps) {
-    if (gap.kind === 'custom-rule-skipped') {
+    if (gap.kind === "custom-rule-skipped") {
       const id: string | null = gap.rule.id;
-    } else if (gap.kind === 'pack-skipped') {
+    } else if (gap.kind === "pack-skipped") {
       const name: string | null = gap.pack.name;
-    } else {
+    } else if ("selectors" in gap) {
+      // A gap of a kind added later, such as profile-not-run, has no selectors.
       const selectors: string[] = gap.selectors;
     }
   }
-  const message: string = formatFailures(result) + formatFailures(result.checksResults, { outcomes: ['fail'] });
+  const message: string =
+    formatFailures(result) +
+    formatFailures(result.checksResults, { outcomes: ["fail"] });
 
   for (const check of result.checksResults) {
     if (check.margin) check.margin.headroom.toFixed(1);
@@ -83,9 +119,9 @@ async function run(): Promise<void> {
       const where: string = formatOccurrenceLocation(o);
       if (o.elementHandle) await o.elementHandle.dispose();
       const shot = o.screenshot;
-      if (shot && 'path' in shot) String(shot.path + shot.box.width);
-      else if (shot && 'buffer' in shot) shot.buffer.toString('base64');
-      else if (shot) String(shot.skipped + (shot.error ?? ''));
+      if (shot && "path" in shot) String(shot.path + shot.box.width);
+      else if (shot && "buffer" in shot) shot.buffer.toString("base64");
+      else if (shot) String(shot.skipped + (shot.error ?? ""));
     }
   }
 
@@ -95,24 +131,33 @@ async function run(): Promise<void> {
 
 async function errors(): Promise<void> {
   try {
-    await new A11yCoreBuilder({ page }).withRules('no-such-rule').analyze();
+    await new A11yCoreBuilder({ page }).withRules("no-such-rule").analyze();
   } catch (e) {
-    if (e instanceof EngineError && e.code === 'INVALID_RUN_ONLY') String(e.selector);
-    if (e instanceof EngineError && e.code === 'INVALID_ENGINE_OPTIONS') String(e.message);
+    if (e instanceof EngineError && e.code === "INVALID_RUN_ONLY")
+      String(e.selector);
+    if (e instanceof EngineError && e.code === "INVALID_ENGINE_OPTIONS")
+      String(e.message);
   }
 }
 
 declare const gateResult: Parameters<typeof getGatingFailures>[0];
-const gatingIds: string[] = getGatingFailures(gateResult, { failOnSeverity: SEVERITIES[2] }).map((c) => c.ruleId);
-const gated: string = formatFailures({ checksResults: [] }, { failOnSeverity: 'serious', howToCheck: true });
+const gatingIds: string[] = getGatingFailures(gateResult, {
+  failOnSeverity: SEVERITIES[2],
+}).map((c) => c.ruleId);
+const gated: string = formatFailures(
+  { checksResults: [] },
+  { failOnSeverity: "serious", howToCheck: true },
+);
 
 async function underConditions(): Promise<void> {
   const merged = await new A11yCoreBuilder({ page })
-    .conditions([{ colorScheme: 'dark' }, { width: 320 }])
+    .conditions([{ colorScheme: "dark" }, { width: 320 }])
     .fetchStyleSheets(false)
     .analyze();
   void merged;
 }
 
 declare const conditionResult: A11yCoreResult;
-const seenIn: string[] = (conditionResult.checksResults[0].occurrences[0].conditions || []).concat((conditionResult.conditionRuns || []).map((r) => r.condition));
+const seenIn: string[] = (
+  conditionResult.checksResults[0].occurrences[0].conditions || []
+).concat((conditionResult.conditionRuns || []).map((r) => r.condition));
