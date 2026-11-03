@@ -3,12 +3,18 @@
 const core = require('@surea11y/core');
 
 const { runa11yCoreInPage, internalsHookScript } = core;
+const bindingBase = require('@surea11y/binding-base');
 const {
   A11yCoreBuilderBase,
   createInPageScan,
   rethrowEngineError,
-  queryOccurrenceElement
-} = require('@surea11y/binding-base');
+  queryOccurrenceElement,
+  // How .frames(true) reads each frame (binding-base 1.7 and later).
+  readFrameElement,
+  isFrameDocumentEmpty,
+  frameReadingOptions
+} = bindingBase;
+const frameEngineOptions = bindingBase.frameEngineOptions || ((engineOptions) => engineOptions);
 
 // core's scan, wrapped so an engine error keeps its `code` across
 // page.evaluate(), which keeps only an error's message. Built once; it is
@@ -249,17 +255,21 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // An engine error (INVALID_RUN_ONLY, INVALID_CONTEXT_SELECTOR) comes
     // back as a plain object and is thrown here as an EngineError with its
     // `code`; any other error in the page rejects evaluate() as before.
-    const runInFrame = async (frameOrPage, frameContextSelector) => {
-      const frameUrl = this._url || (typeof frameOrPage.url === 'function' ? frameOrPage.url() : null);
+    // url() names the top page only; a frame is named by its own address.
+    const top = this._page.mainFrame ? this._page.mainFrame() : null;
+    const runInFrame = async (frameOrPage, frameContextSelector, frameOptions = engineOptions) => {
+      const isTop = frameOrPage === this._page || frameOrPage === top;
+      const ownUrl = typeof frameOrPage.url === 'function' ? frameOrPage.url() : null;
+      const frameUrl = isTop ? this._url || ownUrl : ownUrl;
       if (packScript) await frameOrPage.evaluate(packScript);
       // The text of the style sheets the frame can't read, fetched from Node
       // (binding-base 1.6.0 and core 1.14.0; nothing with older ones).
-      const frameEngineOptions =
+      const scanOptions =
         typeof this._styleSheetEngineOptions === 'function'
-          ? await this._styleSheetEngineOptions(frameOrPage, engineOptions)
-          : engineOptions;
+          ? await this._styleSheetEngineOptions(frameOrPage, frameOptions)
+          : frameOptions;
       const result = rethrowEngineError(
-        await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, frameEngineOptions, runOnly)
+        await frameOrPage.evaluate(inPageScan, frameUrl, frameContextSelector, scanOptions, runOnly)
       );
       this._warnScanGaps(result, '@surea11y/puppeteer');
       // Right after the frame's scan, before reportOnly(): nothing unless
@@ -292,9 +302,21 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // against the top document, and since core 1.10.0 a selector that
     // matches nothing scans nothing, so passing them on would leave most
     // frames unscanned.
+    // Each frame read as core's own scan across frames reads it
+    // (binding-base's frames helpers, 1.7 and later): one the page doesn't
+    // show, that is excluded or outside include()'s roots, or that shows
+    // nothing is left out; one under aria-hidden is scanned as aria-hidden.
+    // A frame inside one inherits how it is read.
+    const readings = new Map();
+    const readingOf = (frame) => {
+      if (!readings.has(frame)) readings.set(frame, this._readFrame(frame, mainFrame, readingOf, engineOptions, contextSelector));
+      return readings.get(frame);
+    };
     const scanFrame = async (frame) => {
       try {
-        return this._applyReportOnly(await runInFrame(frame, null));
+        const reading = await readingOf(frame);
+        if (reading.skipped) return null;
+        return this._applyReportOnly(await runInFrame(frame, null, frameEngineOptions(engineOptions, reading)));
       } catch (e) {
         // A frame can detach/navigate away mid-scan, or be a sandboxed
         // frame the browser blocks scripting in -- don't let one bad frame
@@ -309,9 +331,33 @@ class A11yCoreBuilder extends A11yCoreBuilderBase {
     // in page.frames(): a page of 50 small frames took 18 s one by one.
     // Element pictures scroll the page, so with .screenshots() they go one
     // at a time, as before.
-    const frames = await mapInBatches(subFrames, this._screenshots ? 1 : FRAME_CONCURRENCY, scanFrame);
+    const frames = (await mapInBatches(subFrames, this._screenshots ? 1 : FRAME_CONCURRENCY, scanFrame))
+      .filter(Boolean);
 
     return { topFrame, frames };
+  }
+
+  /**
+   * How a sub-frame is read: `{ skipped }`, `{ ariaHidden }` or `{}`, from
+   * its element in its parent frame and its own document, as core's scan
+   * across frames reads it. Without binding-base's frames helpers, every
+   * frame is scanned as before.
+   */
+  async _readFrame(frame, mainFrame, readingOf, engineOptions, contextSelector) {
+    if (typeof readFrameElement !== 'function') return {};
+    const parent = frame.parentFrame && frame.parentFrame();
+    const above = parent && parent !== mainFrame ? await readingOf(parent) : {};
+    if (above.skipped) return above;
+    let own = {};
+    try {
+      const handle = await frame.frameElement();
+      own = await handle.evaluate(readFrameElement, frameReadingOptions(engineOptions, contextSelector, parent === mainFrame));
+      await handle.dispose().catch(() => {});
+      if (!own.skipped && (await frame.evaluate(isFrameDocumentEmpty))) own = { skipped: 'empty' };
+    } catch (e) {
+      own = {};
+    }
+    return own.skipped ? own : { ariaHidden: !!(above.ariaHidden || own.ariaHidden) };
   }
 
   /**

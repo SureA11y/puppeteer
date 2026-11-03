@@ -959,15 +959,34 @@ test('A11yCoreBuilder: the result names the @surea11y/core release that produced
   }
 });
 
-test('A11yCoreBuilder: frames(true) with include() scopes the top frame only, and scans each sub-frame whole', async () => {
+// How .frames(true) reads frames as core does needs binding-base's frames
+// helpers and a core that takes engineOptions.embeddedAriaHidden.
+const FRAME_POLICY = (() => {
+  if (typeof require('@surea11y/binding-base').readFrameElement !== 'function') {
+    return 'needs a binding-base with the frames helpers';
+  }
+  try {
+    require('@surea11y/core/testing').runa11yCoreOnHtml('<p>x</p>', {
+      engineOptions: { embeddedAriaHidden: true, strictOptions: true },
+      runOnly: ['img-alt-present']
+    });
+    return false;
+  } catch {
+    return 'needs a core that takes embeddedAriaHidden';
+  }
+})();
+
+test('A11yCoreBuilder: frames(true) with include() scopes the top frame and which of its frames are scanned, each whole', { skip: FRAME_POLICY }, async () => {
   const browser = await puppeteer.launch();
   try {
     const page = await browser.newPage();
     await page.goto(
       'data:text/html,<html><body>' +
-      '<main id="main"><img src="top.png"></main>' +
+      '<main id="main"><img src="top.png">' +
+      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg id=inner src=x.png%3E%3C/body%3E%3C/html%3E"></iframe></main>' +
       '<img src="outside.png">' +
-      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg id=inner src=x.png%3E%3C/body%3E%3C/html%3E"></iframe>' +
+      // Outside include()'s roots: left out, as core's own scan across frames leaves it.
+      '<iframe srcdoc="%3Chtml%3E%3Cbody%3E%3Cimg id=out src=y.png%3E%3C/body%3E%3C/html%3E"></iframe>' +
       '</body></html>'
     );
     await page.waitForNetworkIdle().catch(() => {});
@@ -983,6 +1002,38 @@ test('A11yCoreBuilder: frames(true) with include() scopes the top frame only, an
     assert.strictEqual(results.frames[0].contextMatch, null);
     const inner = results.frames[0].checksResults.find((r) => r.ruleId === 'img-alt-present');
     assert.strictEqual(inner.outcome, 'fail');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('A11yCoreBuilder: frames(true) reads frames as core does -- hidden, excluded and empty ones left out, an aria-hidden one scanned as aria-hidden, each under its own url', { skip: FRAME_POLICY }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    const doc = (body) => `<html><body>${body}</body></html>`.replace(/"/g, '&quot;');
+    await page.setContent(
+      '<html><body>' +
+      `<iframe id="hid" style="display:none" srcdoc="${doc('<img src=a.png>')}"></iframe>` +
+      `<div class="ad"><iframe id="exc" srcdoc="${doc('<img src=a.png>')}"></iframe></div>` +
+      `<div aria-hidden="true"><iframe id="ah" srcdoc="${doc('<img src=a.png><button></button>')}"></iframe></div>` +
+      '<iframe id="empty"></iframe>' +
+      `<iframe id="vis" srcdoc="${doc('<img src=a.png>')}"></iframe>` +
+      '</body></html>',
+      { waitUntil: 'load' }
+    );
+
+    const results = await new A11yCoreBuilder({ page, url: 'https://example.test/top' })
+      .exclude('.ad')
+      .frames(true)
+      .analyze();
+    assert.strictEqual(results.topFrame.url, 'https://example.test/top');
+    assert.strictEqual(results.frames.length, 2, JSON.stringify(results.frames.map((f) => f.url)));
+    const fails = (f) => f.checksResults.filter((r) => r.outcome === 'fail').map((r) => r.ruleId);
+    const [ah, vis] = results.frames;
+    assert.ok(!fails(ah).includes('img-alt-present'), 'out of the accessibility tree, a name is no rule');
+    assert.ok(fails(vis).includes('img-alt-present'));
+    assert.ok(results.frames.every((f) => f.url !== 'https://example.test/top'), 'a frame keeps its own url');
   } finally {
     await browser.close();
   }
