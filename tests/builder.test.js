@@ -1127,14 +1127,16 @@ test('A11yCoreBuilder: analyze() warns on the console about each scan gap, once 
     await page.waitForNetworkIdle().catch(() => {});
 
     await new A11yCoreBuilder({ page })
+      // The iframe is in the scope, so it is scanned; #missing matches nothing.
+      .include('iframe')
       .include('#missing')
       .options({ customRules: [{ id: 'broken-custom-rule', meta: { title: 'Broken' }, runInPage: 'not a function' }] })
       .frames(true)
       .analyze();
 
-    // Top frame: the scope matched nothing, and the custom rule was skipped.
-    // Sub-frame: scanned whole, so only the skipped custom rule.
-    assert.strictEqual(warnings.filter((w) => /Nothing was scanned: the scan scope matched no element \("#missing"\)/.test(w)).length, 1);
+    // Top frame: part of the scope matched nothing, and the custom rule was
+    // skipped. Sub-frame: scanned whole, so only the skipped custom rule.
+    assert.strictEqual(warnings.filter((w) => /Part of the scan scope was not scanned: no element matched "#missing"/.test(w)).length, 1);
     assert.strictEqual(warnings.filter((w) => /Custom rule "broken-custom-rule" did not run/.test(w)).length, 2);
     // Each line names the frame it is about.
     assert.ok(warnings.every((w) => /^@surea11y\/puppeteer \((data:text\/html,|about:srcdoc).*\): /.test(w)), warnings.join('\n'));
@@ -1172,6 +1174,8 @@ test('A11yCoreBuilder: logger() receives each scan gap with its frame\'s result,
 
     const seen = [];
     await new A11yCoreBuilder({ page })
+      // The iframe is in the scope, so it is scanned; #missing matches nothing.
+      .include('iframe')
       .include('#missing')
       .options({ customRules: [{ id: 'broken-custom-rule', meta: { title: 'Broken' }, runInPage: 'not a function' }] })
       .frames(true)
@@ -1179,9 +1183,9 @@ test('A11yCoreBuilder: logger() receives each scan gap with its frame\'s result,
       .analyze();
 
     assert.deepStrictEqual(warnings, []);
-    // The scope matched nothing in the top frame; the custom rule was
-    // skipped there and in the sub-frame. Each gap comes with its frame.
-    assert.deepStrictEqual(seen.map(([kind]) => kind).sort(), ['context-not-found', 'custom-rule-skipped', 'custom-rule-skipped']);
+    // Part of the scope matched nothing in the top frame; the custom rule
+    // was skipped there and in the sub-frame. Each gap comes with its frame.
+    assert.deepStrictEqual(seen.map(([kind]) => kind).sort(), ['context-partly-not-found', 'custom-rule-skipped', 'custom-rule-skipped']);
     assert.strictEqual(seen.filter(([, url]) => url === 'about:srcdoc').length, 1, JSON.stringify(seen));
   } finally {
     await browser.close();
@@ -1738,4 +1742,65 @@ test('A11yCoreBuilder: the hook installers want a Puppeteer page', () => {
   assert.strictEqual(A11yCoreBuilder.installLiveRegionHook(fakePage), 'registered');
   const core = require('@surea11y/core');
   assert.deepStrictEqual(scripts, [core.listenerHookScript(), core.liveRegionHookScript()]);
+});
+
+// How .frames(true) reads inert, modal-covered and slotted frames as core
+// does needs binding-base's inheritFrameReading and a core that takes
+// engineOptions.embeddedInert.
+const FRAME_INERT = (() => {
+  if (typeof require('@surea11y/binding-base').inheritFrameReading !== 'function') {
+    return 'needs a binding-base that reads inert frames';
+  }
+  try {
+    require('@surea11y/core/testing').runa11yCoreOnHtml('<p>x</p>', {
+      engineOptions: { embeddedInert: true, strictOptions: true },
+      runOnly: ['img-alt-present']
+    });
+    return false;
+  } catch {
+    return 'needs a core that takes embeddedInert';
+  }
+})();
+
+// A frame under inert, one slotted into a component whose slot is under
+// aria-hidden, one an open modal dialog covers, and one in the dialog.
+const INERT_FRAMES_PAGE = (() => {
+  const frame = (id) => `<iframe title="${id}" srcdoc="<html lang=en><title>${id}</title><img src=a.png>"></iframe>`;
+  return '<!doctype html><html lang="en"><head><title>Frames</title></head><body><main>' +
+    `<div inert>${frame('inert')}</div><x-wrap>${frame('slotted')}</x-wrap>${frame('covered')}` +
+    `<dialog id="d"><p>Cookies?</p>${frame('in-dialog')}</dialog></main>` +
+    '<script>document.querySelector("x-wrap").attachShadow({mode:"open"}).innerHTML=' +
+    '\'<div aria-hidden="true"><slot></slot></div>\';document.getElementById("d").showModal();</script>' +
+    '</body></html>';
+})();
+
+// With the dialog open, only the frame in it is scanned: the browser makes
+// everything else inert.
+function assertModalFramesRead(results) {
+  assert.deepStrictEqual(results.frames.map((f) => f.title || f.error), ['in-dialog']);
+}
+
+// With it closed, the frame under inert, and the one slotted under
+// aria-hidden, are scanned as such, and the one it covered as it is.
+function assertInertFramesRead(results) {
+  const titles = results.frames.map((f) => f.title || f.error);
+  assert.deepStrictEqual([...titles].sort(), ['covered', 'inert', 'slotted'], JSON.stringify(titles));
+  const img = (title) => results.frames.find((f) => f.title === title).checksResults.find((r) => r.ruleId === 'img-alt-present');
+  assert.notStrictEqual(img('inert') && img('inert').outcome, 'fail', 'a name is no rule of inert content');
+  assert.notStrictEqual(img('slotted') && img('slotted').outcome, 'fail', 'aria-hidden around the slot reaches the slotted frame');
+  assert.strictEqual(img('covered').outcome, 'fail', 'with the dialog closed, the frame is the page people reach');
+}
+
+test('A11yCoreBuilder: frames(true) leaves out a frame behind an open modal dialog, and scans one under inert, or slotted under aria-hidden, as such', { skip: FRAME_INERT }, async () => {
+  const browser = await puppeteer.launch();
+  try {
+    const page = await browser.newPage();
+    await page.setContent(INERT_FRAMES_PAGE, { waitUntil: 'load' });
+    await page.waitForFunction(() => [...document.querySelectorAll('iframe')].every((f) => f.contentDocument && f.contentDocument.title));
+    assertModalFramesRead(await new A11yCoreBuilder({ page }).frames(true).analyze());
+    await page.evaluate(() => document.getElementById('d').close());
+    assertInertFramesRead(await new A11yCoreBuilder({ page }).frames(true).analyze());
+  } finally {
+    await browser.close();
+  }
 });
