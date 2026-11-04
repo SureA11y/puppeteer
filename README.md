@@ -8,7 +8,7 @@ A Puppeteer binding for [`@surea11y/core`](https://github.com/SureA11y/core) —
 npm install @surea11y/core @surea11y/puppeteer puppeteer
 ```
 
-`@surea11y/core` 1.14.0 or later, the engine, comes with the binding as a regular dependency, so a project that doesn't list it still works. List it in your own `package.json` too, as the line above does: your project and the binding then share one copy, so whatever you do with core directly, writing a SARIF log or an HTML report (`@surea11y/core/sarif`, `/report`), reading the rule catalogue or keeping a baseline, reads results with the same core that produced them. When your core can't match the binding's range, as with a linked checkout (`file:../core`) or a fork, add `"overrides": { "@surea11y/core": "$@surea11y/core" }` beside it.
+`@surea11y/core` 1.15.0 or later, the engine, comes with the binding as a regular dependency, so a project that doesn't list it still works. List it in your own `package.json` too, as the line above does: your project and the binding then share one copy, so whatever you do with core directly, writing a SARIF log or an HTML report (`@surea11y/core/sarif`, `/report`), reading the rule catalogue or keeping a baseline, reads results with the same core that produced them. When your core can't match the binding's range, as with a linked checkout (`file:../core`) or a fork, add `"overrides": { "@surea11y/core": "$@surea11y/core" }` beside it.
 
 **Coming in 2.0:** core becomes a peer dependency, so the binding will no longer install it for you, and the `overrides` entry is no longer needed. Add `@surea11y/core` to your `package.json` now and 2.0 needs no change.
 
@@ -40,7 +40,7 @@ await browser.close();
 
 `results` is `@surea11y/core`'s own native result shape — see its [`OUTPUT_SCHEMA.md`](https://github.com/SureA11y/core/blob/main/docs/OUTPUT_SCHEMA.md) — not the `violations`/`passes`/`incomplete`/`inapplicable` shape used by other popular accessibility testing tools. The builder's *method names* are modeled on common conventions in this space for migration familiarity; the richer result schema is kept as-is. `results.engine.version` names the `@surea11y/core` release that produced it (such as `"1.12.0"`); quote it in a bug report.
 
-From 1.5.0 this package needs `@surea11y/core` 1.14.0 or later, which it installs with it (see [Install](#install)). Core's rules and messages change between its releases; see [What changes with `@surea11y/core` 1.14](#what-changes-with-surea11ycore-114) below and core's [changelog](https://github.com/SureA11y/core/blob/main/CHANGELOG.md).
+From 1.6.0 this package needs `@surea11y/core` 1.15.0 or later, which it installs with it (see [Install](#install)). Core's rules and messages change between its releases; see [What changes with `@surea11y/core` 1.15](#what-changes-with-surea11ycore-115) below and core's [changelog](https://github.com/SureA11y/core/blob/main/CHANGELOG.md).
 
 Also see `examples/basic-scan.js` for a runnable script (`npm run example -- <url>`).
 
@@ -565,6 +565,17 @@ try {
 ## TypeScript
 
 `src/A11yCoreBuilder.d.ts` (re-exported from `src/index.d.ts`, wired up via `package.json`'s `types` field) ships types for the whole builder API plus `@surea11y/core`'s native result shapes (`A11yCoreResult`, `CheckResult`, `Occurrence`, `CompositeResult`, etc.). The result shapes are `@surea11y/core`'s own types (its `ScanResult` and the rest), with `elementHandle` added to an occurrence, so they follow the engine: `engine.version`, `contextMatch`, `skippedCustomRules`, `shadowHostSelectors` and `margin` are all declared. `EngineError`, `ScanGap`, `ScanNote` and `EngineErrorCode` come from `@surea11y/binding-base`, and so do the types of `withWcag()` and `wcagLevel()` (`WcagVersion`, `WcagLevelInput`), of `plannedChecks()`/`plannedCriteria()` (`PlannedCheck`, `PlannedCriterion`), of `withPacks()`, which takes a pack made with `definePack` (`PackLike`), and of `.screenshots()` (`ScreenshotOptions`, and `OccurrenceScreenshot` for an occurrence's `screenshot`). `A11yCoreBuilder.installInternalsHook(page)`, `installListenerHook(page)`, `installLiveRegionHook(page)` and `announcements(page)` are typed as static methods, the last resolving to `LocatedAnnouncement[] | null` (from `@surea11y/binding-base`). Code that handles every `ScanGap` kind it knows and treats the rest in an `else` branch needs a branch for `'pack-skipped'`, which carries `pack` rather than `selectors`, and one for `'profile-not-run'`, which carries `profile`. `analyze()` is typed `Promise<A11yCoreResult | A11yCoreMultiFrameResult>` — narrow on `'topFrame' in results` (or cast, if you already know which mode you called) to get the specific shape back, since a fluent builder can't statically track that `.frames(true)` was called earlier in the chain. `puppeteer` is a `peerDependencies` entry (not just `devDependencies`) since the class's `page` argument and `Occurrence#elementHandle` both come from it — consumers need their own `puppeteer` install for the types to resolve, same as they already do to construct a `Page` in the first place.
+
+## What changes with `@surea11y/core` 1.15
+
+With `@surea11y/core` 1.15.0, what a scan through this binding shows differently (core's [`CHANGELOG.md`](https://github.com/SureA11y/core/blob/main/CHANGELOG.md) has the full list):
+
+- **WCAG fails only where WCAG fails.** Where only WAI-ARIA or the HTML content model is broken (an attribute the role doesn't support, an unnamed grid or dialog, a heading in a list), the ARIA and HTML structure rules now ask (`cantTell`, uncertainty `spec-only`) instead of failing. The findings keep their reason codes, so baselines still match, and a gate on `fail` no longer fails on them.
+- **Frames are read as the browser reads them.** A framed document is no page of its own, so its title, language, viewport and landmark rules are `notApplicable`; a frame under `aria-hidden` or `inert` is read as such, one behind an open modal dialog is left out, and one in a shadow root is read through its host ([more](#scanning-every-frame-including-cross-origin-iframes)).
+- **Several profiles at once.** `.options({ profile: ['wcag22-aa', 'wai-aria-1.2'] })`, with the packs that bring them, judges the page by each; a profile that can't run is a `profile-not-run` gap ([more](#scanning-with-packs-standards-checklists-and-your-own-rules)).
+- **A picture in the state the finding was made in.** A `text-spacing-content-loss` finding is also pictured with the spacing applied ([more](#a-picture-of-each-failing-element)).
+- **How to check by hand.** Core's procedures say how a person assesses each criterion, and its HTML report lists what a scan leaves to a person.
+- **Roles follow WAI-ARIA more closely:** `role="text"` names no role, and an image with a presentational role and a global ARIA attribute keeps its role, so it fails without `alt`.
 
 ## What changes with `@surea11y/core` 1.14
 
